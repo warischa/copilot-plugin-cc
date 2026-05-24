@@ -130,13 +130,13 @@ None.
 
 ## Remaining work
 
-The DESIGN.md §5 menu is **fully shipped** as of 0.2.0. The only intentionally-open item is:
+The DESIGN.md §5 menu is **fully shipped** as of the post-0.2.0 publish-release wrapper:
 
-- **[ ] §5.7b "marketplace publish" wrapper.** Today the release flow is manual (`bump-version` → commit → tag → push → `gh release create`) per `docs/RELEASE.md`. A thin `npm run publish-release` script that chains those steps would close the last v1.x backlog item. **Open question:** since the GitHub repo *is* the marketplace (users install via `/plugin marketplace add warischa/copilot-plugin-cc`), this could equally be closed as a no-op. Hasn't been decided.
+- **[x] §5.7b publish-release wrapper.** Shipped this session — `scripts/publish-release.mjs` + `npm run publish-release` + 15 unit tests + `docs/RELEASE.md` "Quick release" section. Chains `bump-version` → `npm test` → `git add` (manifest files only) → `git commit` → `git tag -a` → `git push --follow-tags` → `gh release create`. Flags: `--dry-run`, `--skip-tests`, `--skip-push`, `--skip-gh-release`, `--allow-dirty`, `--branch`, `--remote`. Refuses to start on a dirty tree or off-branch HEAD unless overridden. Pure pieces exported so tests never spawn real `git`/`npm`/`gh`.
 
-Surfaced-but-not-tracked-as-required:
+Surfaced-but-deliberately-deferred:
 
-- **[ ] Linux real-host auth verification** — see Assumptions.
+- **[~] Linux real-host auth verification** — not on the roadmap (maintainer doesn't use Linux). If a user reports it broken, the fix is one string in `COPILOT_SECRET_SERVICES`. See DESIGN.md §5 optional follow-ups.
 - **[ ] Move repo to a real `Claude-Copilot` GH org** if/when one is created. Identity placeholder is documented in DESIGN.md §2.7 so the transfer is one `gh api -X POST .../transfer` away.
 
 ## Next steps

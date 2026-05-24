@@ -156,7 +156,7 @@ These are **not bugs** — they were scoped out. Pick up here if extending.
 
 ## 5. Next-step menu
 
-Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7b (marketplace publish wrapper, still open as a scope question — see below). Every "Optional follow-up" then shipped in 0.2.0.
+Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7b (publish-release wrapper, shipped in 0.3.0-dev). Every "Optional follow-up" then shipped in 0.2.0.
 
 1. **[x] Integration smoke test against the real `copilot` binary** — `f556d9d`. `tests/integration.test.mjs` spawns the companion with a 1-line prompt, asserts the JSONL parse path captures the final answer, and verifies `result.sessionId` persists to the stored job file. **As of 0.2.0** opt-in via `COPILOT_INTEGRATION=1` instead of auto-running.
 2. **[x] `/copilot:adversarial-review`** — `0d3cd6f`. New prompt template + companion subcommand + slash command. Reuses the regular review's deny-tools + renderer, so review and adversarial-review share one pipeline. **As of 0.2.0** the prompt's attack-surface list is rebalanced toward broader buckets (correctness edge cases, perf, DX) instead of front-loading enterprise framing.
@@ -166,7 +166,7 @@ Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7
 6. **[x] Touched-files summary on `/copilot:rescue`** — `f95b485`. **As of 0.2.0** the inline cap is a 160-char budget + 12-entry hard ceiling (was a fixed count of 5); a pathologically long path always shows at least one entry.
 7. **Marketplace publish + bump-version script.**
    - **[x] `scripts/bump-version.mjs`** — `c786dd0`. Full release flow documented in `docs/RELEASE.md`. Validated end-to-end by cutting `v0.1.1` and `v0.2.0`.
-   - **[ ] Marketplace publish wrapper.** Still open as a scope question. The Claude Code "marketplace" is the public GitHub repo itself (users install via `/plugin marketplace add warischa/copilot-plugin-cc`), so the choice is: (a) build a thin `npm run publish-release` that chains `bump-version` + commit + tag + push + `gh release create`, or (b) close as no-op because the manual flow in `docs/RELEASE.md` already does this. Not blocking anything.
+   - **[x] `scripts/publish-release.mjs`** — thin wrapper that chains `bump-version` → `npm test` → `git add` (manifest files only) → `git commit` → `git tag -a` → `git push --follow-tags` → `gh release create`. `--dry-run`, `--skip-tests`, `--skip-push`, `--skip-gh-release`, `--allow-dirty`, `--branch`, `--remote` flags. Pure pieces (`parseArgs`, `buildSteps`, `preflightChecks`, `createRunner`) exported for unit testing — the test suite never spawns real `git` / `npm` / `gh`. Stages exactly the three manifest files (never `git add -A`) and refuses to start on a dirty tree or off-branch HEAD unless explicitly overridden. Closes the §5.7b scope question.
 
 ### Optional follow-ups — all shipped in 0.2.0
 
@@ -178,7 +178,7 @@ Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7
 - **[x] Surface liveness sweep count in `/copilot:status`** — `c5303bc`. See item 3 above.
 - **[x] Rebalance touched-files inline cap** — `912c8f1`. See item 6 above.
 - **[x] Age threshold for liveness sweep** — `c5303bc`. See item 3 above.
-- **[ ] Linux real-host auth verification.** Probe list is best-effort and hasn't been confirmed on a real Linux box. Low priority — if a user reports it broken, the fix is one string in `COPILOT_SECRET_SERVICES`.
+- **[~] Linux real-host auth verification.** Probe list is best-effort and hasn't been confirmed on a real Linux box. Not on the roadmap — maintainer doesn't use Linux. If a user reports it broken, the fix is one string in `COPILOT_SECRET_SERVICES`.
 - **[x] Cut `0.2.0`** — `86e1a02`. Tag `v0.2.0`. Carried the breaking Node-floor bump from 18.18 → 20.0.
 
 ---

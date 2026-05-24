@@ -29,7 +29,31 @@ Pre-1.0 caveat: while we're at `0.y.z`, the rules above are guidance, not contra
 
 Pre-releases and build metadata are supported: `1.0.0-rc.1`, `1.0.0+build.42`. The script validates against the semver pattern.
 
-## Workflow
+## Quick release (recommended)
+
+For routine releases, run the wrapper instead of stepping through manually:
+
+```bash
+npm run publish-release -- 0.3.0
+```
+
+This chains: `bump-version` → `npm test` → `git add` (manifest files only) → `git commit "Release 0.3.0"` → `git tag -a v0.3.0` → `git push origin main --follow-tags` → `gh release create v0.3.0`.
+
+Flags:
+
+| Flag | Purpose |
+|---|---|
+| `--dry-run` | Print every command without running it. Recommended for the first release after a long pause. |
+| `--skip-tests` | Skip `npm test`. Use only when CI already validated the same commit. |
+| `--skip-push` | Stop after `git tag` (local-only release). |
+| `--skip-gh-release` | Push but don't create a GitHub Release. |
+| `--allow-dirty` | Don't refuse on unrelated working-tree changes. |
+| `--branch <name>` | Required branch (default `main`). |
+| `--remote <name>` | Push target (default `origin`). |
+
+The wrapper refuses to start if the working tree is dirty or HEAD is not on `main` — fix the tree first or pass `--allow-dirty` / `--branch` explicitly. The manual steps below remain valid and are what the wrapper calls under the hood.
+
+## Manual workflow
 
 ### 1. Check current state
 
@@ -102,6 +126,5 @@ Convention: tag names are prefixed with `v` (`v0.2.0`), but the version inside t
 
 ## What the script does NOT do
 
-- It does not run `git add` / `git commit` / `git tag`. Those are deliberate so you can inspect the diff first.
-- It does not push to a marketplace. That step is intentionally out of scope for v1 — see DESIGN.md §5 item 7. When marketplace publishing lands, it will be a separate `npm run publish-release` script that calls this one first.
-- It does not update `CHANGELOG.md`. We don't keep one yet; commit messages are the changelog. Add a changelog if/when contributor cadence justifies it.
+- It does not run `git add` / `git commit` / `git tag`. Those are deliberate so you can inspect the diff first. For an automated end-to-end flow, use `npm run publish-release` (see "Quick release" above), which calls this script as its first step.
+- It does not update `CHANGELOG.md`. We don't keep one yet; commit messages and the GitHub Releases page are the changelog. Add a changelog if/when contributor cadence justifies it.
