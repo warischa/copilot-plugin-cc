@@ -113,6 +113,54 @@ describe("loadPluginConfig", () => {
     assert.equal(cfg.model, "gpt-5.4");
     assert.deepEqual(cfg._warnings, []);
   });
+
+  it("reads denyTools and addDirs as arrays of strings", () => {
+    const p = writeConfig(
+      "lists.json",
+      JSON.stringify({
+        denyTools: ["shell", "  edit  "],
+        addDirs: ["/extra/path"]
+      })
+    );
+    const cfg = loadPluginConfig({ path: p });
+    assert.deepEqual(cfg.denyTools, ["shell", "edit"]);
+    assert.deepEqual(cfg.addDirs, ["/extra/path"]);
+    assert.deepEqual(cfg._warnings, []);
+  });
+
+  it("warns and ignores when denyTools is not an array", () => {
+    const p = writeConfig("badDeny.json", JSON.stringify({ denyTools: "shell" }));
+    const cfg = loadPluginConfig({ path: p });
+    assert.equal(cfg.denyTools, undefined);
+    assert.match(cfg._warnings[0], /denyTools.*must be an array/);
+  });
+
+  it("drops non-string and empty entries within denyTools with a warning", () => {
+    const p = writeConfig(
+      "mixedDeny.json",
+      JSON.stringify({ denyTools: ["shell", 42, "", "edit"] })
+    );
+    const cfg = loadPluginConfig({ path: p });
+    assert.deepEqual(cfg.denyTools, ["shell", "edit"]);
+    assert.equal(cfg._warnings.length, 2);
+  });
+
+  it("reads defaultPromptFile as a string and warns on empty", () => {
+    const p1 = writeConfig("prompt.json", JSON.stringify({ defaultPromptFile: "  ~/prompt.md  " }));
+    const cfg1 = loadPluginConfig({ path: p1 });
+    assert.equal(cfg1.defaultPromptFile, "~/prompt.md");
+
+    const p2 = writeConfig("emptyPrompt.json", JSON.stringify({ defaultPromptFile: "   " }));
+    const cfg2 = loadPluginConfig({ path: p2 });
+    assert.equal(cfg2.defaultPromptFile, undefined);
+    assert.match(cfg2._warnings[0], /defaultPromptFile.*empty/);
+  });
+
+  it("does not promote denyTools when the resulting list is empty", () => {
+    const p = writeConfig("emptyList.json", JSON.stringify({ denyTools: [] }));
+    const cfg = loadPluginConfig({ path: p });
+    assert.equal(cfg.denyTools, undefined);
+  });
 });
 
 describe("applyPluginDefaults", () => {
@@ -148,6 +196,35 @@ describe("applyPluginDefaults", () => {
   it("safely handles null/undefined pluginConfig", () => {
     const out = applyPluginDefaults({ model: "x" }, null);
     assert.equal(out.model, "x");
+  });
+
+  it("fills denyTools and addDirs from config when CLI omitted them", () => {
+    const out = applyPluginDefaults(
+      {},
+      { denyTools: ["shell"], addDirs: ["/x"] }
+    );
+    assert.deepEqual(out.denyTools, ["shell"]);
+    assert.deepEqual(out.addDirs, ["/x"]);
+  });
+
+  it("CLI array wins over config array (whole-array semantics)", () => {
+    const out = applyPluginDefaults(
+      { denyTools: ["edit"] },
+      { denyTools: ["shell"] }
+    );
+    assert.deepEqual(out.denyTools, ["edit"]);
+  });
+
+  it("copies arrays so callers can't mutate the config in place", () => {
+    const cfg = { denyTools: ["shell"] };
+    const out = applyPluginDefaults({}, cfg);
+    out.denyTools.push("edit");
+    assert.deepEqual(cfg.denyTools, ["shell"]);
+  });
+
+  it("does not propagate defaultPromptFile through applyPluginDefaults", () => {
+    const out = applyPluginDefaults({}, { defaultPromptFile: "~/prompt.md" });
+    assert.equal(out.defaultPromptFile, undefined);
   });
 });
 

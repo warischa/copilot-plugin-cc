@@ -230,6 +230,25 @@ function buildAdversarialReviewPrompt(context, userFocus) {
   });
 }
 
+// Review and adversarial-review must remain non-mutating, so we always
+// enforce a baseline deny list. Plugin-config `denyTools` is *added* on top
+// (deduped, baseline wins on collisions) — it can extend the deny list but
+// never replace the read-only contract.
+const REVIEW_BASELINE_DENY_TOOLS = Object.freeze(["write", "edit", "shell"]);
+
+function buildReviewDenyTools(extra) {
+  if (!Array.isArray(extra) || extra.length === 0) {
+    return [...REVIEW_BASELINE_DENY_TOOLS];
+  }
+  const merged = new Set(REVIEW_BASELINE_DENY_TOOLS);
+  for (const tool of extra) {
+    if (typeof tool === "string" && tool.trim()) {
+      merged.add(tool.trim());
+    }
+  }
+  return [...merged];
+}
+
 async function executeReviewRun(request) {
   ensureCopilotAvailable(request.cwd);
   ensureGitRepository(request.cwd);
@@ -246,7 +265,8 @@ async function executeReviewRun(request) {
     prompt,
     model: request.model,
     allowAllTools: true,
-    denyTools: ["write", "edit", "shell"],
+    denyTools: buildReviewDenyTools(request.denyTools),
+    addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
     onProgress: request.onProgress
   });
 
@@ -305,7 +325,8 @@ async function executeAdversarialReviewRun(request) {
     prompt,
     model: request.model,
     allowAllTools: true,
-    denyTools: ["write", "edit", "shell"],
+    denyTools: buildReviewDenyTools(request.denyTools),
+    addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
     onProgress: request.onProgress
   });
 
@@ -380,6 +401,8 @@ async function executeTaskRun(request) {
     model: request.model,
     effort: request.effort,
     allowAllTools: true,
+    denyTools: Array.isArray(request.denyTools) ? request.denyTools : undefined,
+    addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
     onProgress: request.onProgress
   });
 
@@ -461,7 +484,17 @@ function buildTaskJob(workspaceRoot, taskMetadata, write) {
   });
 }
 
-function buildTaskRequest({ cwd, model, effort, prompt, write, resumeLast, jobId }) {
+function buildTaskRequest({
+  cwd,
+  model,
+  effort,
+  prompt,
+  write,
+  resumeLast,
+  jobId,
+  denyTools,
+  addDirs
+}) {
   return {
     cwd,
     model,
@@ -469,7 +502,9 @@ function buildTaskRequest({ cwd, model, effort, prompt, write, resumeLast, jobId
     prompt,
     write,
     resumeLast,
-    jobId
+    jobId,
+    denyTools: Array.isArray(denyTools) ? [...denyTools] : undefined,
+    addDirs: Array.isArray(addDirs) ? [...addDirs] : undefined
   };
 }
 
@@ -634,6 +669,8 @@ async function handleReview(argv) {
         base: options.base,
         scope: options.scope,
         model: options.model,
+        denyTools: Array.isArray(options.denyTools) ? options.denyTools : undefined,
+        addDirs: Array.isArray(options.addDirs) ? options.addDirs : undefined,
         onProgress: progress
       }),
     { json: options.json }
@@ -679,6 +716,8 @@ async function handleAdversarialReview(argv) {
         scope: options.scope,
         model: options.model,
         userFocus,
+        denyTools: Array.isArray(options.denyTools) ? options.denyTools : undefined,
+        addDirs: Array.isArray(options.addDirs) ? options.addDirs : undefined,
         onProgress: progress
       }),
     { json: options.json }
@@ -702,6 +741,8 @@ async function handleTask(argv) {
   const workspaceRoot = resolveCommandWorkspace(options);
   const model = options.model ?? null;
   const effort = normalizeReasoningEffort(options.effort);
+  const denyTools = Array.isArray(options.denyTools) ? options.denyTools : undefined;
+  const addDirs = Array.isArray(options.addDirs) ? options.addDirs : undefined;
   const prompt = readTaskPrompt(cwd, options, positionals);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);
@@ -726,7 +767,9 @@ async function handleTask(argv) {
       prompt,
       write,
       resumeLast,
-      jobId: job.id
+      jobId: job.id,
+      denyTools,
+      addDirs
     });
     const { payload } = enqueueBackgroundTask(cwd, job, request);
     outputCommandResult({ ...payload, jobId: job.id, title: job.title }, renderQueuedTaskLaunch({ ...payload, jobId: job.id, title: job.title }), options.json);
@@ -745,6 +788,8 @@ async function handleTask(argv) {
         write,
         resumeLast,
         jobId: job.id,
+        denyTools,
+        addDirs,
         onProgress: progress
       }),
     { json: options.json }

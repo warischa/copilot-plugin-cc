@@ -93,7 +93,58 @@ export function loadPluginConfig(options = {}) {
     }
   }
 
+  if (parsed.denyTools != null) {
+    const list = normalizeStringList(parsed.denyTools, "denyTools", warnings);
+    if (list.length > 0) {
+      cleaned.denyTools = list;
+    }
+  }
+
+  if (parsed.addDirs != null) {
+    const list = normalizeStringList(parsed.addDirs, "addDirs", warnings);
+    if (list.length > 0) {
+      cleaned.addDirs = list;
+    }
+  }
+
+  if (parsed.defaultPromptFile != null) {
+    const promptFile = String(parsed.defaultPromptFile).trim();
+    if (promptFile) {
+      cleaned.defaultPromptFile = promptFile;
+    } else {
+      warnings.push(`Plugin config "defaultPromptFile" is empty; ignoring.`);
+    }
+  }
+
   return cleaned;
+}
+
+// Normalize a config-file value that should be a list of non-empty strings.
+// Accepts arrays only; any other shape produces a warning and an empty list.
+// Within the array, non-string and blank entries are dropped (also warned).
+function normalizeStringList(value, fieldName, warnings) {
+  if (!Array.isArray(value)) {
+    warnings.push(
+      `Plugin config "${fieldName}" must be an array of strings; ignoring.`
+    );
+    return [];
+  }
+  const out = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      warnings.push(
+        `Plugin config "${fieldName}" entry ${JSON.stringify(entry)} is not a string; ignoring it.`
+      );
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (!trimmed) {
+      warnings.push(`Plugin config "${fieldName}" has an empty entry; ignoring it.`);
+      continue;
+    }
+    out.push(trimmed);
+  }
+  return out;
 }
 
 /**
@@ -115,6 +166,16 @@ export function applyPluginDefaults(cliOptions, pluginConfig) {
   if (next.effort == null && pluginConfig.effort) {
     next.effort = pluginConfig.effort;
   }
+  if (!Array.isArray(next.denyTools) && Array.isArray(pluginConfig.denyTools)) {
+    next.denyTools = [...pluginConfig.denyTools];
+  }
+  if (!Array.isArray(next.addDirs) && Array.isArray(pluginConfig.addDirs)) {
+    next.addDirs = [...pluginConfig.addDirs];
+  }
+  // defaultPromptFile is intentionally not merged here. It belongs to a
+  // future task-flow that doesn't exist yet; leave the config value
+  // available on pluginConfig for inspection but don't pollute the CLI
+  // options object until there's a consumer.
   return next;
 }
 
