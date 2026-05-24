@@ -53,6 +53,24 @@ describe("parseCmdKeyOutput", () => {
     const target = parseCmdKeyOutput(sample);
     assert.match(target, /copilot/);
   });
+
+  // Regression test: captured from a real Windows host where
+  // `copilot login` had stored credentials. The Copilot CLI's wincred
+  // adapter formats target names as
+  // `copilot-cli/<api-url>:<github-username>`.
+  it("extracts the full target from the real Windows cmdkey format", () => {
+    const sample = [
+      "Currently stored credentials:",
+      "    Target: LegacyGeneric:target=copilot-cli/https://github.com:warischa",
+      "    Type: Generic",
+      "    User: warischa"
+    ].join("\n");
+    assert.equal(
+      parseCmdKeyOutput(sample),
+      "copilot-cli/https://github.com:warischa"
+    );
+  });
+
   it("returns null when no copilot credentials are present", () => {
     const sample = [
       "Currently stored credentials:",
