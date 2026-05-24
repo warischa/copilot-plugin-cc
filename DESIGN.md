@@ -99,7 +99,19 @@ The genuinely new code is `lib/copilot.mjs` (~330 LOC) plus a slimmer `copilot-c
 - Periodic liveness sweep (process `kill -0 <pid>`) that flips dead-running jobs to `failed` with reason
 - Or: signal-based cleanup hook
 
-### 2.7 Auth detection without burning a request
+### 2.7 Project identity uses `Claude-Copilot` as a placeholder namespace
+
+**Decision:** The marketplace slug (`name: "claude-copilot"` in `.claude-plugin/marketplace.json`), owner/author fields (`Claude-Copilot`), and npm-style scoped package name (`@claude-copilot/copilot-plugin-cc`) are an intentional **impersonal placeholder** — they do **not** correspond to a GitHub organization. The actual source repo lives under the personal account [`warischa/copilot-plugin-cc`](https://github.com/warischa/copilot-plugin-cc).
+
+**Why:** v1 was bootstrapped as a port of `openai/codex-plugin-cc` and the manifests were authored before we knew whether a real `Claude-Copilot` GH org would exist. Keeping the slug impersonal lets the project move to a real org later without renaming the marketplace identity (which would force every existing install to break and re-add).
+
+**Tradeoff:** There's a permanent mismatch between the marketplace identity and the GH repo URL. Users installing via `/plugin marketplace add warischa/copilot-plugin-cc` then `/plugin install copilot@claude-copilot` see two different names and may assume one is wrong.
+
+**Future:**
+- If a real `Claude-Copilot` GH org gets created, move the repo (`gh api -X POST /repos/warischa/copilot-plugin-cc/transfer -f new_owner=Claude-Copilot`) and update the git remote. The manifests stay as-is. Existing installs keep working.
+- If we decide the project is staying personal, rename in one batch: marketplace slug → `warischa`, owner/author → real name, scoped package → `@warischa/copilot-plugin-cc`, README install command updated. This breaks existing installs.
+
+### 2.8 Auth detection without burning a request
 
 **Decision:** Auth check uses (in order): env var presence (`COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`), macOS keychain probe (`security find-generic-password -s copilot-cli`), then plaintext fallback files.
 

@@ -145,7 +145,7 @@ For the next Claude Code session, in order:
 ## Important context
 
 - This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns. CLAUDE.md's "Conceptual source" section spells this out.
-- The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account), so there's a mismatch you may want to reconcile when/if a real `Claude-Copilot` GitHub org gets created.
+- The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account). This is **a resolved decision**, not a TODO — see [DESIGN.md §2.7 "Project identity"](DESIGN.md) for the rationale. The plan is: if a real `Claude-Copilot` GH org appears later, transfer the repo and the manifest identity keeps working untouched.
 - Commits on `main` so far (newest first): `c786dd0`, `f95b485`, `d9ed30a`, `753f163`, `2e2d87e`, `6cae525`, `0d3cd6f`, `f556d9d`, `d7e73bb`.
 - Branch `main` is protected — no force-push, no deletion, linear history only. Routine commits and pushes are fine.
 - The `code-review-graph` build hook may regenerate `.code-review-graph/` at the repo root — it's in `.gitignore`.

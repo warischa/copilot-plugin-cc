@@ -22,7 +22,13 @@ This plugin gives Claude Code users a workflow that mirrors what `openai/codex-p
 
 ## Install
 
-Add the marketplace in Claude Code:
+Add the marketplace in Claude Code (from the public GitHub source):
+
+```bash
+/plugin marketplace add warischa/copilot-plugin-cc
+```
+
+Or from a local checkout:
 
 ```bash
 /plugin marketplace add /path/to/copilot-plugin-cc
@@ -33,6 +39,9 @@ Install the plugin:
 ```bash
 /plugin install copilot@claude-copilot
 ```
+
+> [!NOTE]
+> `claude-copilot` here is the **marketplace slug** declared in `.claude-plugin/marketplace.json` — not a GitHub organization. The source repo lives under [`warischa/copilot-plugin-cc`](https://github.com/warischa/copilot-plugin-cc). See [DESIGN.md §2 "Project identity"](DESIGN.md) for why the slug is deliberately impersonal.
 
 Reload plugins:
 
