@@ -93,6 +93,25 @@ export function renderSetupReport(report) {
     ""
   ];
 
+  if (report.pluginConfig) {
+    const cfg = report.pluginConfig;
+    const summary = [];
+    if (cfg.model) {
+      summary.push(`model=${cfg.model}`);
+    }
+    if (cfg.effort) {
+      summary.push(`effort=${cfg.effort}`);
+    }
+    const label = summary.length > 0 ? summary.join(", ") : "(no defaults set)";
+    lines.push(`Plugin config (${cfg.path}): ${label}`);
+    if (Array.isArray(cfg.warnings) && cfg.warnings.length > 0) {
+      for (const warning of cfg.warnings) {
+        lines.push(`  ! ${warning}`);
+      }
+    }
+    lines.push("");
+  }
+
   if (report.actionsTaken.length > 0) {
     lines.push("Actions taken:");
     for (const action of report.actionsTaken) {

@@ -34,6 +34,11 @@ import {
 } from "./lib/job-control.mjs";
 import { sweepDeadJobs } from "./lib/job-liveness.mjs";
 import {
+  applyPluginDefaults,
+  loadPluginConfig,
+  reportPluginConfigWarnings
+} from "./lib/plugin-config.mjs";
+import {
   appendLogLine,
   createJobLogFile,
   createJobProgressUpdater,
@@ -159,6 +164,7 @@ function buildSetupReport(cwd, actionsTaken = []) {
   const npmStatus = binaryAvailable("npm", ["--version"], { cwd });
   const copilotStatus = getCopilotAvailability(cwd);
   const authStatus = getCopilotAuthStatus(cwd);
+  const pluginConfig = loadPluginConfig();
 
   const nextSteps = [];
   if (!copilotStatus.available) {
@@ -175,6 +181,12 @@ function buildSetupReport(cwd, actionsTaken = []) {
     npm: npmStatus,
     copilot: copilotStatus,
     auth: authStatus,
+    pluginConfig: {
+      path: pluginConfig._path,
+      model: pluginConfig.model ?? null,
+      effort: pluginConfig.effort ?? null,
+      warnings: pluginConfig._warnings ?? []
+    },
     actionsTaken,
     nextSteps
   };
@@ -584,13 +596,17 @@ function enqueueBackgroundTask(cwd, job, request) {
 }
 
 async function handleReview(argv) {
-  const { options } = parseCommandInput(argv, {
+  const { options: rawOptions } = parseCommandInput(argv, {
     valueOptions: ["base", "scope", "model", "cwd"],
     booleanOptions: ["json", "background", "wait"],
     aliasMap: {
       m: "model"
     }
   });
+
+  const pluginConfig = loadPluginConfig();
+  reportPluginConfigWarnings(pluginConfig);
+  const options = applyPluginDefaults(rawOptions, pluginConfig);
 
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
@@ -623,13 +639,17 @@ async function handleReview(argv) {
 }
 
 async function handleAdversarialReview(argv) {
-  const { options, positionals } = parseCommandInput(argv, {
+  const { options: rawOptions, positionals } = parseCommandInput(argv, {
     valueOptions: ["base", "scope", "model", "cwd"],
     booleanOptions: ["json", "background", "wait"],
     aliasMap: {
       m: "model"
     }
   });
+
+  const pluginConfig = loadPluginConfig();
+  reportPluginConfigWarnings(pluginConfig);
+  const options = applyPluginDefaults(rawOptions, pluginConfig);
 
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
@@ -664,13 +684,17 @@ async function handleAdversarialReview(argv) {
 }
 
 async function handleTask(argv) {
-  const { options, positionals } = parseCommandInput(argv, {
+  const { options: rawOptions, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "effort", "cwd", "prompt-file"],
     booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background"],
     aliasMap: {
       m: "model"
     }
   });
+
+  const pluginConfig = loadPluginConfig();
+  reportPluginConfigWarnings(pluginConfig);
+  const options = applyPluginDefaults(rawOptions, pluginConfig);
 
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
