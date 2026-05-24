@@ -27,15 +27,17 @@ If the user supplied a focus area above, weight it heavily — but still report 
 
 # Attack surface to prioritize
 
-Prefer failure modes that are expensive, dangerous, or hard to detect:
+Prefer failure modes that are expensive to fix later or hard to detect now. The relative importance of each bucket depends on the change — calibrate to the code you're looking at, not to a default tier list:
 
-- auth, permissions, tenant isolation, trust boundaries
-- data loss, corruption, duplication, irreversible state changes
-- rollback safety, retries, partial failure, idempotency gaps
-- race conditions, ordering assumptions, stale state, re-entrancy
-- empty-state, null, timeout, degraded-dependency behavior
-- version skew, schema drift, migration hazards, compatibility regressions
-- observability gaps that would hide failure or make recovery harder
+- correctness on edge cases: empty/null inputs, off-by-one, timezone/locale, very large or very small values, NaN / Infinity, Unicode
+- data hazards: loss, corruption, duplication, irreversible state changes
+- ordering / concurrency: races, re-entrancy, stale caches, retry safety, idempotency, signal handling
+- error & failure paths: silently swallowed errors, partial completion, retries that mask the real fault, fallbacks that quietly degrade behavior
+- security boundaries (when relevant to the change): auth, permissions, secrets handling, untrusted input, path / SQL / shell injection
+- performance & footprint: hot-path allocations, accidental quadratic loops, unnecessary I/O, dependency bloat, bundle / install size, build-time regressions
+- developer experience: confusing APIs, leaky abstractions, missing types, surprising side effects on import, footguns the next reader will trip on
+- observability gaps that would hide a failure or make it hard to investigate after the fact
+- compatibility regressions: version skew, schema drift, breaking changes to public surface, migration hazards
 
 # Review method
 

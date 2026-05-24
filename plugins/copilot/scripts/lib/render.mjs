@@ -155,16 +155,39 @@ export function renderReviewResult(result, meta) {
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-// Cap the inline file listing so the summary stays one line. Anything
-// beyond MAX_INLINE_FILES collapses to "...and N more".
-const MAX_INLINE_FILES = 5;
+// Inline file-summary budget. A typical Copilot rescue touches 1–5 short
+// paths and fits cleanly on one line, but real refactors often hit 8–10
+// files with long paths and the previous count-of-5 cap silently truncated
+// most of the useful context. Use a character budget so short paths get
+// more inline entries and long paths stop earlier, then fall back to a
+// hard ceiling so a single pathologically long line can't dominate.
+const INLINE_FILES_CHAR_BUDGET = 160;
+const INLINE_FILES_HARD_CAP = 12;
+
+function pickInlineFiles(files) {
+  const shown = [];
+  let charsUsed = 0;
+  for (const file of files) {
+    if (shown.length >= INLINE_FILES_HARD_CAP) break;
+    // 2 chars accounts for the ", " separator before each entry beyond
+    // the first. We still always include at least one file even if it
+    // exceeds the budget — truncating to zero would hide everything.
+    const addedCost = (shown.length === 0 ? 0 : 2) + file.length;
+    if (shown.length > 0 && charsUsed + addedCost > INLINE_FILES_CHAR_BUDGET) {
+      break;
+    }
+    shown.push(file);
+    charsUsed += addedCost;
+  }
+  return shown;
+}
 
 export function renderTouchedFilesSummary(touchedFiles) {
   if (!Array.isArray(touchedFiles) || touchedFiles.length === 0) {
     return null;
   }
   const total = touchedFiles.length;
-  const shown = touchedFiles.slice(0, MAX_INLINE_FILES);
+  const shown = pickInlineFiles(touchedFiles);
   const overflow = total - shown.length;
   const suffix = overflow > 0 ? `, ...and ${overflow} more` : "";
   const noun = total === 1 ? "file" : "files";

@@ -66,10 +66,41 @@ describe("renderTouchedFilesSummary", () => {
     );
   });
 
-  it("caps inline list to 5 and shows overflow count", () => {
+  it("inlines many short paths when they fit the char budget", () => {
     const files = ["a", "b", "c", "d", "e", "f", "g"];
     const summary = renderTouchedFilesSummary(files);
-    assert.match(summary, /Touched 7 files: a, b, c, d, e, \.\.\.and 2 more/);
+    // Seven single-char names are well under the 160-char budget, so all
+    // should render inline with no overflow suffix.
+    assert.equal(summary, "Touched 7 files: a, b, c, d, e, f, g");
+  });
+
+  it("truncates when long paths overflow the char budget", () => {
+    const files = [
+      "src/some/long/feature/Module.tsx",
+      "src/some/long/feature/Module.test.tsx",
+      "src/some/long/feature/sub/component/HeavyComponent.tsx",
+      "src/some/long/feature/sub/component/HeavyComponent.test.tsx",
+      "src/some/long/feature/sub/component/Styles.module.css",
+      "src/some/long/feature/sub/component/index.ts"
+    ];
+    const summary = renderTouchedFilesSummary(files);
+    assert.match(summary, /^Touched 6 files: /);
+    assert.match(summary, /\.\.\.and \d+ more$/);
+    // Header line should stay close to the budget — not balloon to >300 chars.
+    assert.ok(summary.length < 240, `summary too long: ${summary.length} chars`);
+  });
+
+  it("always shows at least one entry even if it exceeds the budget", () => {
+    const pathologicallyLong = "x".repeat(500);
+    const summary = renderTouchedFilesSummary([pathologicallyLong, "b"]);
+    assert.match(summary, /Touched 2 files: x{500}, \.\.\.and 1 more/);
+  });
+
+  it("respects the hard ceiling on inline entries", () => {
+    // 20 single-letter files all fit the char budget, but the hard cap is 12.
+    const files = Array.from({ length: 20 }, (_, i) => `f${i}`);
+    const summary = renderTouchedFilesSummary(files);
+    assert.match(summary, /^Touched 20 files: f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, \.\.\.and 8 more$/);
   });
 });
 
