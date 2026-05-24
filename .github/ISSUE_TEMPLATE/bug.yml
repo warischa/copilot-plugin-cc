@@ -1,0 +1,72 @@
+name: Bug report
+description: Something is broken in the plugin
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The more detail you give, the faster we can fix it.
+
+        Before filing, please run `/copilot:setup` from Claude Code and paste the output below — most issues are environment-related.
+  - type: textarea
+    id: setup-output
+    attributes:
+      label: /copilot:setup output
+      description: Paste the full output of `/copilot:setup` (or `node plugins/copilot/scripts/copilot-companion.mjs setup`).
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you run, what did you expect, and what did you get instead?
+      placeholder: |
+        I ran `/copilot:review` on my staged changes.
+        Expected: a review printed verbatim.
+        Got: error "copilot command not found".
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps so we can hit the same failure locally.
+      placeholder: |
+        1. Stage a change with `git add`
+        2. Run `/copilot:review` in Claude Code
+        3. See error
+    validations:
+      required: true
+  - type: input
+    id: copilot-version
+    attributes:
+      label: copilot CLI version
+      description: Output of `copilot --version`
+      placeholder: "1.0.52"
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      description: Output of `node --version`
+      placeholder: "v20.x.x"
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Windows (native)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Anything from `$CLAUDE_PLUGIN_DATA/state/<workspace>/jobs/<id>.log` if a job was tracked.
+        Redact tokens before pasting.
+      render: shell

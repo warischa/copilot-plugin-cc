@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a new command, flag, or extension
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please check `DESIGN.md` §5 ("Next-step menu") — your idea may already be on the roadmap.
+
+        Also worth cross-referencing [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc): if the feature already exists there, the port is usually straightforward.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What workflow are you trying to do that the plugin doesn't support today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        How should it work from the user's side?
+        Example: "Add `/copilot:adversarial-review` that runs two Copilot passes and prints disagreements."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds did you try?
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This already exists in openai/codex-plugin-cc and just needs porting
+        - label: This is new — not in codex-plugin-cc
+        - label: I'm willing to send a PR

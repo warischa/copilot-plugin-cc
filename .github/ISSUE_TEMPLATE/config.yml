@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Copilot CLI itself
+    url: https://github.com/features/copilot/cli
+    about: For issues with the `copilot` binary (not this plugin), file with GitHub Copilot.
+  - name: Claude Code
+    url: https://github.com/anthropics/claude-code/issues
+    about: For Claude Code harness issues unrelated to this plugin.
+  - name: openai/codex-plugin-cc
+    url: https://github.com/openai/codex-plugin-cc
+    about: The reference implementation this plugin ports.
