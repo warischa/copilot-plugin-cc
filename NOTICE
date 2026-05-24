@@ -1,0 +1,9 @@
+Claude-Copilot Plugin for Claude Code
+
+This project is a Claude Code plugin that wraps the GitHub Copilot CLI
+(https://github.com/features/copilot/cli) and was inspired by the architecture
+of the OpenAI Codex plugin for Claude Code (openai/codex-plugin-cc).
+
+Trademarks and product names mentioned ("GitHub Copilot", "Claude Code",
+"Claude") belong to their respective owners. This project is not affiliated
+with or endorsed by GitHub, OpenAI, or Anthropic.
