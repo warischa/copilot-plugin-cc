@@ -136,18 +136,35 @@ These are **not bugs** — they were scoped out. Pick up here if extending.
 - **`copilot -p` does not honor `--no-banner`** (and rejects it). We use `--no-color` and `--no-auto-update` instead.
 - **Models change.** Don't hardcode model names anywhere. Pass user-supplied `--model` through verbatim.
 - **`--allow-all-tools` is mandatory for non-interactive mode.** Documented in Copilot's own help text but easy to miss.
+- **PID reuse blindspot in `lib/job-liveness.mjs`.** The sweep uses `process.kill(pid, 0)` to check liveness. If the OS reuses a dead worker's pid for an unrelated process, the sweep sees "alive" and won't flip the orphan record. The mitigation, when needed, is an age threshold on `startedAt` — a ~5-line addition in `sweepDeadJobs`. Not done in v1.
+- **Every `npm test` spends one Copilot API call.** `tests/integration.test.mjs` auto-skips when copilot isn't installed/authed, but on dev machines that *are* authed, the suite runs a real prompt every time (~14s, costs one Copilot turn). If this becomes friction, gate behind `COPILOT_INTEGRATION=1` in the test's `before()` block.
+- **Windows cmdkey target format is `copilot-cli/<api-url>:<github-account>`.** Verified on a real Windows host; `parseCmdKeyOutput` is tested against the verbatim line. GitHub Enterprise should work without changes — the regex matches `https://ghe.example.com:user` the same way.
 
 ---
 
-## 5. Next-step menu (in rough priority order)
+## 5. Next-step menu
 
-1. **Integration smoke test against the real `copilot` binary.** A test that spawns the companion with a 1-line prompt, asserts the JSONL parse path captures the final answer, and asserts `result.sessionId` lands in the stored job. Skips if `copilot` is not installed or not authenticated.
-2. **`/copilot:adversarial-review`** — second prompt template + small companion subcommand. Mirror the codex pattern; the work is mostly prompt design.
-3. **Liveness sweep for orphan background jobs.** Add a `lib/job-liveness.mjs` invoked from `status` that flips dead-running jobs to `failed`.
-4. **Linux/Windows auth detection.** Today we only probe macOS keychain.
-5. **Allow `--model` defaults via plugin-level config.** A `~/.claude/plugins/copilot/config.json` that injects `--model` / `--effort` when not user-specified.
-6. **Hook for `/copilot:rescue` post-run** — emit a one-line summary of touched files (parseable from JSONL `file.change` events if Copilot emits them) so users see scope before reading the verbatim output.
-7. **Marketplace publish + bump-version script.** Port `scripts/bump-version.mjs` from codex-plugin-cc when ready for a release.
+Items 1–6 shipped in the 2026-05-24 follow-up session. Item 7 was split — bump-version landed; marketplace publish is the only remaining v1.x extension.
+
+1. **[x] Integration smoke test against the real `copilot` binary** — `f556d9d`. `tests/integration.test.mjs` spawns the companion with a 1-line prompt, asserts the JSONL parse path captures the final answer, and verifies `result.sessionId` persists to the stored job file. Auto-skips when copilot is unavailable or unauthenticated.
+2. **[x] `/copilot:adversarial-review`** — `0d3cd6f`. New prompt template + companion subcommand + slash command. Frames Copilot adversarially ("break confidence in the change, not validate it"), accepts positional focus text via `{{USER_FOCUS}}`. Reuses the regular review's deny-tools + renderer, so review and adversarial-review share one pipeline.
+3. **[x] Liveness sweep for orphan background jobs** — `6cae525`. `lib/job-liveness.mjs` exports `isProcessAlive(pid)` and `sweepDeadJobs(workspaceRoot)`. Wired into `handleStatus` as a best-effort step before snapshots are built.
+4. **[x] Linux/Windows auth detection** — `2e2d87e` (+ Windows regression `753f163`). `detectLinuxSecretAuth` probes `secret-tool` with a list of likely Copilot CLI service names; `detectWindowsCredentialAuth` greps `cmdkey /list` output. All probes accept injectable `platform` / `runCommand` / `binaryAvailable` options so each platform path is unit-testable from any host. macOS keychain probe also now loops over the service list.
+5. **[x] Plugin-level model/effort defaults** — `d9ed30a`. `~/.claude/plugins/copilot/config.json` (override via `COPILOT_PLUGIN_CONFIG_PATH`). CLI flags always win. Loader is lenient — malformed JSON, unknown effort values, and wrong types degrade to "no default" with a one-line stderr warning rather than failing the command. `/copilot:setup` surfaces the config path and current defaults.
+6. **[x] Touched-files summary on `/copilot:rescue`** — `f95b485`. `runCopilotPrompt` collects `file.change` event paths into an ordered, deduped set; `executeTaskRun` threads them through both the JSON payload (`payload.touchedFiles: string[]`) and the rendered output (header line: `Touched N files: a, b, ..., ...and M more`). Capped at 5 inline names. The capture lives in `lib/copilot.mjs`, so review and adversarial-review get the data for free if/when their rendering wants it.
+7. **Marketplace publish + bump-version script.**
+   - **[x] `scripts/bump-version.mjs`** — `c786dd0`. Keeps `package.json`, `plugins/copilot/.claude-plugin/plugin.json`, and the two version fields in `.claude-plugin/marketplace.json` in sync. `npm run bump-version -- <version>` and `npm run version:check` aliases. Full release flow documented in `docs/RELEASE.md`. Dropped the codex original's `package-lock.json` target (no runtime deps yet).
+   - **[ ] Marketplace publish.** Not started. The hand-off point is documented in `docs/RELEASE.md` ("What the script does NOT do"): when this lands, it should be a separate `npm run publish-release` that calls bump-version first.
+
+### Optional follow-ups surfaced during the build
+
+- **Cut a `0.1.1` patch release** capturing items 1–7. Uses the new `bump-version` flow end-to-end and validates `docs/RELEASE.md`.
+- **Add `COPILOT_INTEGRATION=1` gate** to `tests/integration.test.mjs` if the per-`npm-test` Copilot API cost becomes friction.
+- **Tune the adversarial-review prompt voice.** The current framing (`plugins/copilot/prompts/adversarial-review.md`) ports codex's enterprise-flavored attack surface (auth, data loss, rollback, races). A solo-dev or hobbyist context may want a different prioritization (perf, dep bloat, build time). Pure prompt edit, no code.
+- **Extend the plugin-config schema.** Today: `model`, `effort`. Plausible additions: `denyTools`, `addDirs`, `defaultPromptFile`. Strictly additive — see `loadPluginConfig` for the validation pattern.
+- **Surface liveness sweep count in `/copilot:status` output.** Currently the sweep is silent. ~5 lines in `handleStatus` to thread `summary.swept` into the rendered report.
+- **Reduce touched-files inline cap.** Current `MAX_INLINE_FILES = 5` (in `lib/render.mjs`) was a UX guess; rebalance once real-usage data exists.
+- **Age threshold for liveness sweep.** Mitigates PID reuse (see §4). 5 lines.
 
 ---
 

@@ -1,61 +1,83 @@
-# Session handoff — 2026-05-24 (updated)
+# Session handoff — 2026-05-24 (post-v1 extensions)
 
 ## Current task and status
 
-**Status:** Done. v1 MVP of `copilot-plugin-cc` is complete, tested, and documented. All 36 files are staged but **not committed**.
+**Status:** Done. Initial v1 MVP is committed, pushed, and extended with all of DESIGN.md §5 items 1–6 plus the bump-version half of item 7. The repo is **public** at https://github.com/warischa/copilot-plugin-cc with branch protection on `main`. Working tree is clean, all 77 tests pass, and version metadata is in sync at `0.1.0`.
 
-Last action: added a "Conceptual source" section to `CLAUDE.md` pointing future Claude instances at [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) as the reference implementation to consult before extending.
+Last action: ported `scripts/bump-version.mjs` from `openai/codex-plugin-cc` and wrote `docs/RELEASE.md` (commit `c786dd0`).
 
 ## Goal
 
-Build a Claude Code plugin (`copilot-plugin-cc`) that wraps the **GitHub Copilot CLI** (`copilot` binary) using the same architectural pattern as [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc). Users get `/copilot:review`, `/copilot:rescue`, `/copilot:status`, `/copilot:result`, `/copilot:cancel`, `/copilot:setup` inside Claude Code.
+Build and harden a Claude Code plugin (`copilot-plugin-cc`) that wraps the **GitHub Copilot CLI** (`copilot` binary) using the same architectural pattern as [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc). Users get `/copilot:setup`, `/copilot:review`, `/copilot:adversarial-review`, `/copilot:rescue`, `/copilot:status`, `/copilot:result`, `/copilot:cancel` inside Claude Code.
 
-## What was done
+## What this session added on top of the v1 MVP
 
-- Scaffolded a marketplace-style repo at `/Users/waris.c/claudecode/Claude-Copilot/copilot-plugin-cc/`
-- Forked ~70% of codex-plugin-cc runtime-agnostic libs (args, state, tracked-jobs, render, process, git, fs, workspace, prompts, job-control), translated codex→copilot strings
-- Wrote `plugins/copilot/scripts/lib/copilot.mjs` (~330 LOC) — spawns `copilot -p ... --output-format json` and parses the JSONL event stream (`assistant.message`, `assistant.turn_end`, `result`)
-- Wrote `plugins/copilot/scripts/copilot-companion.mjs` — CLI dispatcher (slimmer than codex's: no broker/app-server plumbing)
-- 6 slash commands + 1 subagent (`copilot-rescue`) + 2 skills + 1 prompt template
-- 3 smoke test files (args, state, render) — **21/21 passing**
-- Both repo-level `README.md` and plugin-level `plugins/copilot/README.md` (matching the official Anthropic plugins convention)
-- `CLAUDE.md` (architecture map for future Claude instances) with a prominent "Conceptual source" section pointing at [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) and the local sibling clone at `../codex-plugin-cc/`
-- `DESIGN.md` (codex→copilot concept mapping, decisions + omissions + next-step menu)
+The previous handoff left the v1 MVP staged-but-uncommitted. This session:
 
-## Locked design decisions
+1. **Created the initial commit** `d7e73bb` and reframed the working tree:
+   - Renamed `master` → `main`.
+   - Verified the folder had been moved to `/Users/waris.c/claude/copilot-plugin-cc/` (the older `/Users/waris.c/claudecode/Claude-Copilot/copilot-plugin-cc/` path is gone).
+2. **Published to GitHub** — created `warischa/copilot-plugin-cc` (private at first, flipped to public). Pushed `main` and set up tracking.
+3. **Added community files** — `.github/ISSUE_TEMPLATE/{bug,feature,config}.yml` (commit `f556d9d`).
+4. **Applied branch protection** via the Rulesets API on `main`: blocks deletion, non-fast-forward, non-linear-history. Ruleset id `16794344`.
+5. **Worked through DESIGN.md §5 items 1–7**:
+   - §5.1 integration smoke test → `f556d9d`
+   - §5.2 `/copilot:adversarial-review` → `0d3cd6f`
+   - §5.3 job-liveness sweep → `6cae525`
+   - §5.4 Linux/Windows auth detection → `2e2d87e`
+   - Windows real-data regression test → `753f163`
+   - §5.5 plugin-level model/effort defaults → `d9ed30a`
+   - §5.6 touched-files summary → `f95b485`
+   - §5.7 (partial) bump-version script + `docs/RELEASE.md` → `c786dd0` (marketplace publish intentionally deferred)
+6. **Test count:** 21 → 77 (all passing). Suite runtime ~14s, dominated by the integration test's real Copilot call.
 
-- **Scope:** MVP only — setup + review + rescue + status/result/cancel. No adversarial-review, no Stop-hook gate, no spark alias.
-- **Review output:** verbatim prose passthrough (no structured JSON schema).
-- **Rescue permissions:** `--allow-all-tools` (required for non-interactive mode anyway).
-- **License:** MIT.
-- **Author/branding:** `Claude-Copilot` (org-style, no person).
-- **Tests:** minimal smoke tests, not a full port of codex's test suite.
-- **Storage field naming:** `threadId` retained as the canonical field name for Copilot's session id (cosmetic rename would have churned ~6 files).
+## Locked design decisions added this session
 
-See `DESIGN.md` §2 for the full reasoning behind each.
+- **Branch name:** `main` (renamed from `master`).
+- **GitHub owner:** personal account `warischa` (not the `Claude-Copilot` org placeholder).
+- **Visibility:** public.
+- **Branch protection:** Rulesets API (not classic branch protection), blocks deletion + force-push + non-linear history. No required reviewers (solo repo for now).
+- **Plugin config (§5.5):** user-scoped at `~/.claude/plugins/copilot/config.json`, not workspace-scoped. Lenient loader (warn-and-skip on bad values). Schema starts at `model` + `effort` only; future fields are strictly additive.
+- **Adversarial review (§5.2):** prose passthrough, **no JSON schema** — diverges from codex's structured `<structured_output_contract>` block to stay consistent with our v1 "verbatim prose" decision (DESIGN.md §2).
+- **Liveness sweep (§5.3):** silent — flips zombie jobs but doesn't surface a `"Swept N jobs"` line in `/copilot:status` output. Easy to make noisy later (~5 lines).
+- **Touched-files cap (§5.6):** 5 inline names, then `...and N more`. UX guess.
+- **Bump-version (§5.7):** dropped the codex original's `package-lock.json` target — this plugin has no runtime deps.
+- **Integration test cost:** every `npm test` spends one real Copilot API call (~14s). Auto-skips if copilot is missing/unauthed, but no env-var opt-out gate yet.
 
-## Files touched
+The original v1 MVP decisions (verbatim prose review, `--allow-all-tools`, MIT, `Claude-Copilot` author placeholder, `threadId` storage field, minimal smoke tests) all still stand. See `DESIGN.md` §2.
 
-All under `/Users/waris.c/claudecode/Claude-Copilot/copilot-plugin-cc/`:
+## Files touched this session
 
-- Repo root: `.gitignore`, `LICENSE`, `NOTICE`, `README.md`, `package.json`, `CLAUDE.md`, `DESIGN.md`, `SESSION-HANDOFF.md`, `.claude-plugin/marketplace.json`
-- Plugin: `plugins/copilot/{.claude-plugin/plugin.json, README.md}`
-- Commands: `plugins/copilot/commands/{setup,review,rescue,status,result,cancel}.md`
-- Agent: `plugins/copilot/agents/copilot-rescue.md`
-- Skills: `plugins/copilot/skills/{copilot-cli-runtime,copilot-result-handling}/SKILL.md`
-- Prompts: `plugins/copilot/prompts/review.md`
-- Hooks: `plugins/copilot/hooks/` (empty dir — placeholder)
-- Scripts: `plugins/copilot/scripts/copilot-companion.mjs` + `lib/{args,copilot,fs,git,job-control,process,prompts,render,state,tracked-jobs,workspace}.mjs`
-- Tests: `tests/{args,state,render}.test.mjs`
+Repo root (`/Users/waris.c/claude/copilot-plugin-cc/`):
 
-`codex-plugin-cc/` (sibling directory) was read-only — used as reference, never modified.
+- **New:**
+  - `.github/ISSUE_TEMPLATE/{bug,feature,config}.yml`
+  - `docs/RELEASE.md`
+  - `scripts/bump-version.mjs`
+  - `plugins/copilot/commands/adversarial-review.md`
+  - `plugins/copilot/prompts/adversarial-review.md`
+  - `plugins/copilot/scripts/lib/job-liveness.mjs`
+  - `plugins/copilot/scripts/lib/plugin-config.mjs`
+  - `tests/integration.test.mjs`
+  - `tests/job-liveness.test.mjs`
+  - `tests/auth-detect.test.mjs`
+  - `tests/plugin-config.test.mjs`
+  - `tests/touched-files.test.mjs`
+  - `tests/bump-version.test.mjs`
+- **Modified:**
+  - `README.md` (added Releasing section; corrected stale "adversarial-review not in v1" row)
+  - `DESIGN.md` (§4 new gotchas; §5 status markers)
+  - `SESSION-HANDOFF.md` (this file)
+  - `package.json` (added `bump-version` + `version:check` scripts)
+  - `plugins/copilot/scripts/copilot-companion.mjs` (adversarial-review wiring; plugin-config defaults; liveness sweep; setup report extension; touchedFiles in task payload)
+  - `plugins/copilot/scripts/lib/copilot.mjs` (cross-platform auth detection; `extractTouchedFilePath` + `touchedFiles` capture in run state)
+  - `plugins/copilot/scripts/lib/render.mjs` (setup-report plugin-config block; `renderTouchedFilesSummary` + task-result header)
 
 ## Assumptions
 
-- User has Node 18.18+ and the `copilot` CLI installed (verified at v1.0.52 in this session).
-- User has a GitHub Copilot subscription and is logged in (verified via macOS keychain probe).
-- `$CLAUDE_PLUGIN_DATA` is set when running inside Claude Code; falls back to `os.tmpdir()/copilot-companion/` outside.
-- Future Copilot CLI versions will keep emitting JSONL with the `assistant.message` + `result` event types observed today. If those change, `lib/copilot.mjs` is the only file that needs updating.
+- All the v1 MVP assumptions still hold (Node 18.18+, copilot CLI installed and authed, `$CLAUDE_PLUGIN_DATA` set inside Claude Code).
+- The `tests/integration.test.mjs` assertion that an empty `hello` prompt produces `touchedFiles: []` could become flaky if a future Copilot version starts emitting `file.change` events for read-only inspections. Watch for that.
+- Linux/Windows auth detection is best-effort: probes a hardcoded list of likely keytar service names (`copilot-cli`, `github-copilot-cli`, `com.github.copilot.cli`, `GitHub Copilot CLI`, `Copilot CLI`). Verified for **Windows** via real `cmdkey /list` output. Not yet verified on a real Linux host — if a user reports "authed but plugin says not authed" on Linux, the fix is almost certainly adding one string to `COPILOT_SECRET_SERVICES` in `lib/copilot.mjs`.
 
 ## Blockers
 
@@ -63,51 +85,67 @@ None.
 
 ## Commands run
 
-- `npm test` (= `node --test tests/*.test.mjs`) → **21 pass / 0 fail**
-- `node plugins/copilot/scripts/copilot-companion.mjs help` → prints usage
-- `node plugins/copilot/scripts/copilot-companion.mjs setup` → reports ready: copilot v1.0.52, auth via macOS keychain
-- `node plugins/copilot/scripts/copilot-companion.mjs status` → "No jobs recorded yet"
-- `copilot -p "respond with just the word hello" --output-format json --allow-all-tools --no-color` (used to discover the JSONL event schema)
+- `git commit` + `git push origin main` × 9 (all on `main`, linear history)
+- `npm test` × many (final: 77 pass / 0 fail / ~14s)
+- `npm run version:check` → `All version metadata matches 0.1.0.`
+- `gh repo create warischa/copilot-plugin-cc --private --source=. --remote=origin --push`
+- `gh repo edit warischa/copilot-plugin-cc --visibility public --accept-visibility-change-consequences`
+- `gh api -X POST repos/warischa/copilot-plugin-cc/rulesets ...` (created ruleset id `16794344`)
+- `git branch -m master main`
+- `node scripts/bump-version.mjs --check` (one-off)
 
 ## Tests done vs not done
 
-**Done (unit/smoke):**
-- `args.test.mjs` — arg parser including alias map, value options, passthrough, escape handling
-- `state.test.mjs` — job upsert/list, config set/get, generateJobId uniqueness
-- `render.test.mjs` — review/setup/task/stored-job/cancel renderers
+**Done:**
 
-**Not done (deliberate v1 omission):**
-- No integration test against the real `copilot` binary
-- No end-to-end `/copilot:review` test from a Claude Code session
-- No background-job lifecycle test
-- No cross-platform auth detection test (only macOS keychain path verified)
+- Unit smoke (carried over from v1): args, state, render
+- Integration smoke: real `copilot` task via the companion (auto-skips if unauthed)
+- New unit suites:
+  - `tests/job-liveness.test.mjs` — 8 tests
+  - `tests/auth-detect.test.mjs` — 12 tests (incl. real-Windows regression line)
+  - `tests/plugin-config.test.mjs` — 17 tests
+  - `tests/touched-files.test.mjs` — 12 tests
+  - `tests/bump-version.test.mjs` — 6 tests
 
-See `DESIGN.md` §5 item 1 for the integration test design.
+**Not done (deliberate / future):**
 
-## Remaining work (none for v1)
+- No Linux real-host auth verification (probe list is best-effort; see Assumptions).
+- No end-to-end test of `/copilot:adversarial-review` against the real binary — it shares `runCopilotPrompt` with `review`, so the integration test covers the underlying path.
+- No CI workflow (no `.github/workflows/`). Adding `npm test` + `npm run version:check` to CI is a clean next step.
+- No `CHANGELOG.md` — commit messages are the changelog.
+- No marketplace-publish script.
 
-Nothing for v1. Future iterations are enumerated in `DESIGN.md` §5 "Next-step menu" in rough priority order:
+## Remaining work
 
-1. Integration smoke test against real `copilot`
-2. `/copilot:adversarial-review`
-3. Liveness sweep for orphan background jobs
-4. Linux/Windows auth detection
-5. Plugin-level model/effort defaults
-6. Post-run summary of touched files in `/copilot:rescue`
-7. Marketplace publish + bump-version script
+Per DESIGN.md §5:
+
+- **[ ] §5.7 marketplace publish.** Deliberately deferred. Hand-off note for the next contributor lives in `docs/RELEASE.md` under "What the script does NOT do".
+
+Optional follow-ups surfaced during the build (also captured in DESIGN.md §5 "Optional follow-ups"):
+
+- **[ ] Cut a `0.1.1` patch release** capturing everything since v1 MVP. Exercises the new bump-version flow end-to-end.
+- **[ ] Add CI workflow** running `npm test` + `npm run version:check`.
+- **[ ] Linux real-host probe verification.**
+- **[ ] `COPILOT_INTEGRATION=1` env gate** for the integration test if API-cost-per-`npm-test` becomes friction.
+- **[ ] Tune the adversarial-review prompt voice** — currently ports codex's enterprise-flavored attack surface.
+- **[ ] Extend plugin-config schema** with `denyTools` / `addDirs` / `defaultPromptFile`.
+- **[ ] Surface liveness sweep count** in `/copilot:status` output.
+- **[ ] Age threshold in liveness sweep** to mitigate PID reuse (see DESIGN.md §4).
 
 ## Next steps
 
 For the next Claude Code session, in order:
 
-1. Read `CLAUDE.md` (architecture map + "Conceptual source" section pointing at [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)) and `DESIGN.md` (decisions + open items) before touching anything.
-2. If asked to commit: `git add -A` (already done — 36 files staged) → `git commit` with a message summarizing the v1 MVP build.
-3. If asked to extend: pick from the `DESIGN.md` §5 menu. Each item names the files to start from. Always cross-reference the codex-plugin-cc sibling clone at `../codex-plugin-cc/plugins/codex/` before designing — most patterns already exist there.
-4. If `copilot` CLI changes: re-probe with `copilot -p "ping" --output-format json --allow-all-tools --no-color` and diff against the `describeEvent()` switch in `lib/copilot.mjs`.
+1. Skim `DESIGN.md` (§2 decisions, §4 gotchas, §5 status). It's the authoritative state-of-the-plugin doc — the SESSION-HANDOFF.md you're reading is the timeline, DESIGN.md is the contract.
+2. If the user asks to cut a release: follow `docs/RELEASE.md`. Run `npm run version:check`, then `npm run bump-version -- <new>`, then commit + tag + push.
+3. If the user asks to extend further: pick from DESIGN.md §5 "Optional follow-ups". Each item names the files to touch.
+4. If `copilot` CLI changes: re-probe with `copilot -p "ping" --output-format json --allow-all-tools --no-color` and diff against `describeEvent()` in `lib/copilot.mjs`. The pure extractors (`extractTouchedFilePath`, `parseCmdKeyOutput`, `parseSecretToolOutput`) are exported specifically to make this kind of drift catch-able with one test.
+5. **Always cross-reference** the codex-plugin-cc reference at `https://github.com/openai/codex-plugin-cc` before designing a new feature. Most patterns already exist there. A shallow clone is in `/tmp/codex-plugin-cc-ref/` during this session — that's ephemeral; re-clone if you need it.
 
 ## Important context
 
-- This project sits as a sibling of `codex-plugin-cc/` (a fully-built reference implementation for OpenAI Codex). When in doubt about a design pattern, check the codex version first — most of our architecture is a direct port.
-- The user's name in `package.json` / `plugin.json` is `Claude-Copilot` (org-style placeholder), not the user's personal name or email. They explicitly chose this in the DIF round.
-- The `code-review-graph` build hook may have created a `.code-review-graph/` directory at the repo root — it's in `.gitignore`.
-- All work happened in DIF→JDI mode following the user's AI Working Rules (see `~/.claude/CLAUDE.md`).
+- This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns. CLAUDE.md's "Conceptual source" section spells this out.
+- The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account), so there's a mismatch you may want to reconcile when/if a real `Claude-Copilot` GitHub org gets created.
+- Commits on `main` so far (newest first): `c786dd0`, `f95b485`, `d9ed30a`, `753f163`, `2e2d87e`, `6cae525`, `0d3cd6f`, `f556d9d`, `d7e73bb`.
+- Branch `main` is protected — no force-push, no deletion, linear history only. Routine commits and pushes are fine.
+- The `code-review-graph` build hook may regenerate `.code-review-graph/` at the repo root — it's in `.gitignore`.
