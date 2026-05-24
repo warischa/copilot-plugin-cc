@@ -234,7 +234,13 @@ function buildAdversarialReviewPrompt(context, userFocus) {
 // enforce a baseline deny list. Plugin-config `denyTools` is *added* on top
 // (deduped, baseline wins on collisions) — it can extend the deny list but
 // never replace the read-only contract.
-const REVIEW_BASELINE_DENY_TOOLS = Object.freeze(["write", "edit", "shell"]);
+//
+// Valid Copilot CLI tool tokens (per `copilot help` + docs): `write`, and
+// `shell(<pattern>)` forms like `shell(git push)`. The bare `shell` token
+// denies all shell tools. We previously included `edit`, but Copilot has no
+// such tool — file edits are gated by `write`, and `edit` was silently
+// ignored. Removed in 0.3.1.
+export const REVIEW_BASELINE_DENY_TOOLS = Object.freeze(["write", "shell"]);
 
 function buildReviewDenyTools(extra) {
   if (!Array.isArray(extra) || extra.length === 0) {
@@ -443,8 +449,19 @@ function renderQueuedTaskLaunch(payload) {
   return `${payload.title} started in the background as ${payload.jobId}. Check /copilot:status ${payload.jobId} for progress.\n`;
 }
 
-function getJobKindLabel(jobClass) {
-  return jobClass === "review" ? "review" : "rescue";
+export function getJobKindLabel(jobClass) {
+  switch (jobClass) {
+    case "review":
+      return "review";
+    case "adversarial-review":
+      return "adversarial-review";
+    case "task":
+      return "task";
+    case "rescue":
+      return "rescue";
+    default:
+      return typeof jobClass === "string" && jobClass.length > 0 ? jobClass : "task";
+  }
 }
 
 function createCompanionJob({ prefix, kind, title, workspaceRoot, jobClass, summary, write = false }) {
@@ -1028,8 +1045,20 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`${message}\n`);
-  process.exitCode = 1;
-});
+const isDirectInvocation = (() => {
+  try {
+    const entry = process.argv[1] && path.resolve(process.argv[1]);
+    const self = new URL(import.meta.url).pathname;
+    return entry === self;
+  } catch {
+    return false;
+  }
+})();
+
+if (isDirectInvocation) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`${message}\n`);
+    process.exitCode = 1;
+  });
+}

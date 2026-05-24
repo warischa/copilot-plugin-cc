@@ -54,8 +54,22 @@ export function getCopilotAvailability(cwd) {
   }
   return {
     available: true,
-    detail: versionStatus.detail
+    detail: extractVersionLine(versionStatus.detail)
   };
+}
+
+// `copilot --version` prints the version on the first line, sometimes
+// followed by an "Run 'copilot update' to check for updates." advisory.
+// Keep only the version line in the setup report.
+export function extractVersionLine(detail) {
+  if (typeof detail !== "string") {
+    return detail;
+  }
+  const firstNonEmpty = detail
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  return firstNonEmpty ?? detail.trim();
 }
 
 // Likely Copilot CLI keychain/secret-service identifiers, in order of
