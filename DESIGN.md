@@ -156,27 +156,30 @@ These are **not bugs** — they were scoped out. Pick up here if extending.
 
 ## 5. Next-step menu
 
-Items 1–6 shipped in the 2026-05-24 follow-up session. Item 7 was split — bump-version landed; marketplace publish is the only remaining v1.x extension.
+Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7b (marketplace publish wrapper, still open as a scope question — see below). Every "Optional follow-up" then shipped in 0.2.0.
 
-1. **[x] Integration smoke test against the real `copilot` binary** — `f556d9d`. `tests/integration.test.mjs` spawns the companion with a 1-line prompt, asserts the JSONL parse path captures the final answer, and verifies `result.sessionId` persists to the stored job file. Auto-skips when copilot is unavailable or unauthenticated.
-2. **[x] `/copilot:adversarial-review`** — `0d3cd6f`. New prompt template + companion subcommand + slash command. Frames Copilot adversarially ("break confidence in the change, not validate it"), accepts positional focus text via `{{USER_FOCUS}}`. Reuses the regular review's deny-tools + renderer, so review and adversarial-review share one pipeline.
-3. **[x] Liveness sweep for orphan background jobs** — `6cae525`. `lib/job-liveness.mjs` exports `isProcessAlive(pid)` and `sweepDeadJobs(workspaceRoot)`. Wired into `handleStatus` as a best-effort step before snapshots are built.
-4. **[x] Linux/Windows auth detection** — `2e2d87e` (+ Windows regression `753f163`). `detectLinuxSecretAuth` probes `secret-tool` with a list of likely Copilot CLI service names; `detectWindowsCredentialAuth` greps `cmdkey /list` output. All probes accept injectable `platform` / `runCommand` / `binaryAvailable` options so each platform path is unit-testable from any host. macOS keychain probe also now loops over the service list.
-5. **[x] Plugin-level model/effort defaults** — `d9ed30a`. `~/.claude/plugins/copilot/config.json` (override via `COPILOT_PLUGIN_CONFIG_PATH`). CLI flags always win. Loader is lenient — malformed JSON, unknown effort values, and wrong types degrade to "no default" with a one-line stderr warning rather than failing the command. `/copilot:setup` surfaces the config path and current defaults.
-6. **[x] Touched-files summary on `/copilot:rescue`** — `f95b485`. `runCopilotPrompt` collects `file.change` event paths into an ordered, deduped set; `executeTaskRun` threads them through both the JSON payload (`payload.touchedFiles: string[]`) and the rendered output (header line: `Touched N files: a, b, ..., ...and M more`). Capped at 5 inline names. The capture lives in `lib/copilot.mjs`, so review and adversarial-review get the data for free if/when their rendering wants it.
+1. **[x] Integration smoke test against the real `copilot` binary** — `f556d9d`. `tests/integration.test.mjs` spawns the companion with a 1-line prompt, asserts the JSONL parse path captures the final answer, and verifies `result.sessionId` persists to the stored job file. **As of 0.2.0** opt-in via `COPILOT_INTEGRATION=1` instead of auto-running.
+2. **[x] `/copilot:adversarial-review`** — `0d3cd6f`. New prompt template + companion subcommand + slash command. Reuses the regular review's deny-tools + renderer, so review and adversarial-review share one pipeline. **As of 0.2.0** the prompt's attack-surface list is rebalanced toward broader buckets (correctness edge cases, perf, DX) instead of front-loading enterprise framing.
+3. **[x] Liveness sweep for orphan background jobs** — `6cae525`. `lib/job-liveness.mjs` exports `isProcessAlive(pid)` and `sweepDeadJobs(workspaceRoot)`. **As of 0.2.0** the sweep result is surfaced in `/copilot:status` as a one-line `Swept N orphan job(s) (id, ...)` notice, and `sweepDeadJobs` has a `maxRunningAgeMs` option (default 6h) that flips suspected PID-reuse jobs even when the recorded pid still resolves.
+4. **[x] Linux/Windows auth detection** — `2e2d87e` (+ Windows regression `753f163`). Injectable `platform` / `runCommand` / `binaryAvailable` options for cross-platform testability.
+5. **[x] Plugin-level model/effort defaults** — `d9ed30a`. `~/.claude/plugins/copilot/config.json`. **As of 0.2.0** the schema also accepts `denyTools`, `addDirs`, and `defaultPromptFile` (the first two are wired through `applyPluginDefaults`; `defaultPromptFile` is validated but not yet consumed). Reviews always keep the baseline `write,edit,shell` deny list and merge plugin-config additions on top.
+6. **[x] Touched-files summary on `/copilot:rescue`** — `f95b485`. **As of 0.2.0** the inline cap is a 160-char budget + 12-entry hard ceiling (was a fixed count of 5); a pathologically long path always shows at least one entry.
 7. **Marketplace publish + bump-version script.**
-   - **[x] `scripts/bump-version.mjs`** — `c786dd0`. Keeps `package.json`, `plugins/copilot/.claude-plugin/plugin.json`, and the two version fields in `.claude-plugin/marketplace.json` in sync. `npm run bump-version -- <version>` and `npm run version:check` aliases. Full release flow documented in `docs/RELEASE.md`. Dropped the codex original's `package-lock.json` target (no runtime deps yet).
-   - **[ ] Marketplace publish.** Not started. The hand-off point is documented in `docs/RELEASE.md` ("What the script does NOT do"): when this lands, it should be a separate `npm run publish-release` that calls bump-version first.
+   - **[x] `scripts/bump-version.mjs`** — `c786dd0`. Full release flow documented in `docs/RELEASE.md`. Validated end-to-end by cutting `v0.1.1` and `v0.2.0`.
+   - **[ ] Marketplace publish wrapper.** Still open as a scope question. The Claude Code "marketplace" is the public GitHub repo itself (users install via `/plugin marketplace add warischa/copilot-plugin-cc`), so the choice is: (a) build a thin `npm run publish-release` that chains `bump-version` + commit + tag + push + `gh release create`, or (b) close as no-op because the manual flow in `docs/RELEASE.md` already does this. Not blocking anything.
 
-### Optional follow-ups surfaced during the build
+### Optional follow-ups — all shipped in 0.2.0
 
-- **Cut a `0.1.1` patch release** capturing items 1–7. Uses the new `bump-version` flow end-to-end and validates `docs/RELEASE.md`.
-- **Add `COPILOT_INTEGRATION=1` gate** to `tests/integration.test.mjs` if the per-`npm-test` Copilot API cost becomes friction.
-- **Tune the adversarial-review prompt voice.** The current framing (`plugins/copilot/prompts/adversarial-review.md`) ports codex's enterprise-flavored attack surface (auth, data loss, rollback, races). A solo-dev or hobbyist context may want a different prioritization (perf, dep bloat, build time). Pure prompt edit, no code.
-- **Extend the plugin-config schema.** Today: `model`, `effort`. Plausible additions: `denyTools`, `addDirs`, `defaultPromptFile`. Strictly additive — see `loadPluginConfig` for the validation pattern.
-- **Surface liveness sweep count in `/copilot:status` output.** Currently the sweep is silent. ~5 lines in `handleStatus` to thread `summary.swept` into the rendered report.
-- **Reduce touched-files inline cap.** Current `MAX_INLINE_FILES = 5` (in `lib/render.mjs`) was a UX guess; rebalance once real-usage data exists.
-- **Age threshold for liveness sweep.** Mitigates PID reuse (see §4). 5 lines.
+- **[x] Cut a `0.1.1` patch release** — done. Tag `v0.1.1`, commit `028aa6e`. Exercised the new `bump-version` flow end-to-end.
+- **[x] CI workflow** — `2074121`. `.github/workflows/ci.yml` runs `version:check` + `npm test` on push/PR across Node 20/22 × Linux/macOS/Windows.
+- **[x] `COPILOT_INTEGRATION=1` gate** — `2074121`. Integration test is now opt-in.
+- **[x] Tune the adversarial-review prompt voice** — `912c8f1`. Pure prompt rewrite.
+- **[x] Extend the plugin-config schema** — `a9be2a5`. See item 5 above.
+- **[x] Surface liveness sweep count in `/copilot:status`** — `c5303bc`. See item 3 above.
+- **[x] Rebalance touched-files inline cap** — `912c8f1`. See item 6 above.
+- **[x] Age threshold for liveness sweep** — `c5303bc`. See item 3 above.
+- **[ ] Linux real-host auth verification.** Probe list is best-effort and hasn't been confirmed on a real Linux box. Low priority — if a user reports it broken, the fix is one string in `COPILOT_SECRET_SERVICES`.
+- **[x] Cut `0.2.0`** — `86e1a02`. Tag `v0.2.0`. Carried the breaking Node-floor bump from 18.18 → 20.0.
 
 ---
 

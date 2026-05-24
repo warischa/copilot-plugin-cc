@@ -2,9 +2,9 @@
 
 ## Current task and status
 
-**Status:** Done. Initial v1 MVP is committed, pushed, and extended with all of DESIGN.md §5 items 1–6 plus the bump-version half of item 7. The repo is **public** at https://github.com/warischa/copilot-plugin-cc with branch protection on `main`. Working tree is clean, all 77 tests pass, and version metadata is in sync at `0.1.0`.
+**Status:** Done. v1 MVP shipped as `0.1.0`, then `0.1.1` rolled up §5 items 1–6 + bump-version, and `0.2.0` rolled up every optional follow-up, dropped Node 18, and added a real CI workflow. The repo is **public** at https://github.com/warischa/copilot-plugin-cc with branch protection on `main`. Working tree is clean, all 97 tests pass (1 skipped — integration is now opt-in), and version metadata is in sync at `0.2.0`.
 
-Last action: ported `scripts/bump-version.mjs` from `openai/codex-plugin-cc` and wrote `docs/RELEASE.md` (commit `c786dd0`).
+Last action: documented the `Claude-Copilot` placeholder identity as an intentional design choice in DESIGN.md §2.7 (commit subject `Document Claude-Copilot identity as an intentional placeholder`).
 
 ## Goal
 
@@ -31,6 +31,22 @@ The previous handoff left the v1 MVP staged-but-uncommitted. This session:
    - §5.7 (partial) bump-version script + `docs/RELEASE.md` → `c786dd0` (marketplace publish intentionally deferred)
 6. **Test count:** 21 → 77 (all passing). Suite runtime ~14s, dominated by the integration test's real Copilot call.
 
+## What was added on top of 0.1.1 (this session, → 0.2.0)
+
+After cutting the `0.1.1` patch release that captured §5 items 1–6 + bump-version, this session worked through every remaining "Optional follow-up" from DESIGN.md §5 and then some:
+
+1. **Cut `0.1.1` release** end-to-end — exercised the new `bump-version` flow + `docs/RELEASE.md`. Tag `v0.1.1`, commit `028aa6e`, GH Release `https://github.com/warischa/copilot-plugin-cc/releases/tag/v0.1.1`.
+2. **CI workflow + `COPILOT_INTEGRATION` gate** — `.github/workflows/ci.yml` runs `version:check` + `npm test` on push/PR across Node 20/22 × Linux/macOS/Windows. Integration test is now opt-in (off by default), so `npm test` runtime dropped from ~14s → ~3s and stopped burning a Copilot API call per run (`2074121`).
+3. **Surface liveness sweep count + PID-reuse age threshold** — `/copilot:status` now prints `Swept N orphan job(s) (id, ...)` when zombies are flipped. `sweepDeadJobs` gained `maxRunningAgeMs` (default 6h) to flip suspected PID-reuse jobs even when the recorded pid still resolves (`c5303bc`).
+4. **Plugin-config schema extended** — `denyTools`, `addDirs`, `defaultPromptFile` validated by `loadPluginConfig`. `denyTools` + `addDirs` flow through `applyPluginDefaults`; reviews always keep the baseline `write,edit,shell` deny list and merge plugin-config additions on top (`a9be2a5`).
+5. **Adversarial-review prompt rebalanced** — broader buckets (correctness edge cases, perf, DX) instead of always front-loading enterprise concerns; framed as "calibrate to the code, not a default tier list" (`912c8f1`).
+6. **Touched-files cap** — replaced the count-of-5 with a 160-char budget + 12-entry hard ceiling; always shows at least one entry even if it exceeds the budget (`912c8f1`).
+7. **First CI run uncovered Node 18 hook-ordering bug + Windows path test fragility** — bumped `engines.node` to `>=20.0.0`, dropped 18.18 from CI matrix, rebuilt the path assertion with `path.join` so it's platform-neutral, updated docs (`fb9f5fb`).
+8. **Cut `0.2.0` release** — minor bump because Node-floor raise is breaking pre-1.0. Tag `v0.2.0`, commit `86e1a02`, GH Release `https://github.com/warischa/copilot-plugin-cc/releases/tag/v0.2.0`. CI green on Node 20/22 × Linux/macOS/Windows.
+9. **Documented `Claude-Copilot` placeholder identity** — explicit DESIGN.md §2.7 decision that the marketplace slug is an intentional impersonal namespace, not a missing org. Repo can transfer to a real `Claude-Copilot` org later without breaking existing installs.
+
+**Test count:** 77 → 97 (96 pass + 1 skipped — integration is opt-in via `COPILOT_INTEGRATION=1`). Suite runtime ~3s locally without the integration gate, ~14s with it set.
+
 ## Locked design decisions added this session
 
 - **Branch name:** `main` (renamed from `master`).
@@ -39,10 +55,13 @@ The previous handoff left the v1 MVP staged-but-uncommitted. This session:
 - **Branch protection:** Rulesets API (not classic branch protection), blocks deletion + force-push + non-linear history. No required reviewers (solo repo for now).
 - **Plugin config (§5.5):** user-scoped at `~/.claude/plugins/copilot/config.json`, not workspace-scoped. Lenient loader (warn-and-skip on bad values). Schema starts at `model` + `effort` only; future fields are strictly additive.
 - **Adversarial review (§5.2):** prose passthrough, **no JSON schema** — diverges from codex's structured `<structured_output_contract>` block to stay consistent with our v1 "verbatim prose" decision (DESIGN.md §2).
-- **Liveness sweep (§5.3):** silent — flips zombie jobs but doesn't surface a `"Swept N jobs"` line in `/copilot:status` output. Easy to make noisy later (~5 lines).
-- **Touched-files cap (§5.6):** 5 inline names, then `...and N more`. UX guess.
+- **Liveness sweep (§5.3):** ~~silent~~ — **as of 0.2.0**, `/copilot:status` now prints a `Swept N orphan job(s) (id, ...)` line when zombies are flipped.
+- **Touched-files cap (§5.6):** ~~5 inline names~~ — **as of 0.2.0**, char budget (160) + hard ceiling (12 entries); always shows ≥1 entry even if it exceeds the budget.
 - **Bump-version (§5.7):** dropped the codex original's `package-lock.json` target — this plugin has no runtime deps.
-- **Integration test cost:** every `npm test` spends one real Copilot API call (~14s). Auto-skips if copilot is missing/unauthed, but no env-var opt-out gate yet.
+- **Integration test cost:** ~~every `npm test` spends one real Copilot API call~~ — **as of 0.2.0**, opt-in via `COPILOT_INTEGRATION=1`. Default `npm test` no longer hits the network.
+- **Node floor (added 0.2.0):** `>=20.0.0`. Bumped from 18.18 after CI surfaced `node:test` hook-ordering bugs on Node 18.
+- **CI (added 0.2.0):** GitHub Actions matrix on Node 20/22 × Linux/macOS/Windows runs `version:check` + `npm test` on push/PR.
+- **Identity placeholder (added 0.2.0):** `Claude-Copilot` is an **intentional** marketplace namespace, not a missing GH org. See DESIGN.md §2.7. Repo can transfer to a real `Claude-Copilot` org later without breaking installs.
 
 The original v1 MVP decisions (verbatim prose review, `--allow-all-tools`, MIT, `Claude-Copilot` author placeholder, `threadId` storage field, minimal smoke tests) all still stand. See `DESIGN.md` §2.
 
@@ -75,7 +94,7 @@ Repo root (`/Users/waris.c/claude/copilot-plugin-cc/`):
 
 ## Assumptions
 
-- All the v1 MVP assumptions still hold (Node 18.18+, copilot CLI installed and authed, `$CLAUDE_PLUGIN_DATA` set inside Claude Code).
+- All the v1 MVP assumptions still hold (**Node 20+ as of 0.2.0**, copilot CLI installed and authed, `$CLAUDE_PLUGIN_DATA` set inside Claude Code).
 - The `tests/integration.test.mjs` assertion that an empty `hello` prompt produces `touchedFiles: []` could become flaky if a future Copilot version starts emitting `file.change` events for read-only inspections. Watch for that.
 - Linux/Windows auth detection is best-effort: probes a hardcoded list of likely keytar service names (`copilot-cli`, `github-copilot-cli`, `com.github.copilot.cli`, `GitHub Copilot CLI`, `Copilot CLI`). Verified for **Windows** via real `cmdkey /list` output. Not yet verified on a real Linux host — if a user reports "authed but plugin says not authed" on Linux, the fix is almost certainly adding one string to `COPILOT_SECRET_SERVICES` in `lib/copilot.mjs`.
 
@@ -83,54 +102,42 @@ Repo root (`/Users/waris.c/claude/copilot-plugin-cc/`):
 
 None.
 
-## Commands run
+## Commands run (this session, on top of 0.1.0/0.1.1 history)
 
-- `git commit` + `git push origin main` × 9 (all on `main`, linear history)
-- `npm test` × many (final: 77 pass / 0 fail / ~14s)
-- `npm run version:check` → `All version metadata matches 0.1.0.`
-- `gh repo create warischa/copilot-plugin-cc --private --source=. --remote=origin --push`
-- `gh repo edit warischa/copilot-plugin-cc --visibility public --accept-visibility-change-consequences`
-- `gh api -X POST repos/warischa/copilot-plugin-cc/rulesets ...` (created ruleset id `16794344`)
-- `git branch -m master main`
-- `node scripts/bump-version.mjs --check` (one-off)
+- `npm run bump-version -- 0.1.1` → `0.2.0` (two release cuts)
+- `git tag -a v0.1.1 -m "Release 0.1.1"` + `git tag -a v0.2.0 -m "Release 0.2.0"`
+- `git push origin main --follow-tags` × multiple
+- `gh release create v0.1.1 …` + `gh release create v0.2.0 …`
+- `gh run watch <id>` to monitor CI on the first push that surfaced Node 18 + Windows failures
+- `npm test` × many (final: **96 pass / 0 fail / 1 skipped** locally; same on CI across Node 20/22 × Linux/macOS/Windows)
 
 ## Tests done vs not done
 
 **Done:**
 
-- Unit smoke (carried over from v1): args, state, render
-- Integration smoke: real `copilot` task via the companion (auto-skips if unauthed)
-- New unit suites:
-  - `tests/job-liveness.test.mjs` — 8 tests
-  - `tests/auth-detect.test.mjs` — 12 tests (incl. real-Windows regression line)
-  - `tests/plugin-config.test.mjs` — 17 tests
-  - `tests/touched-files.test.mjs` — 12 tests
-  - `tests/bump-version.test.mjs` — 6 tests
+- Unit smoke (carried over from v1 + 0.1.1): args, state, render, plugin-config, job-liveness, touched-files, auth-detect, bump-version
+- Integration smoke: real `copilot` task via the companion (now opt-in via `COPILOT_INTEGRATION=1`)
+- **CI** (added 0.2.0): node:test full suite on Node 20/22 × Linux/macOS/Windows
+- New render coverage: `renderStatusReport` sweep-line cases (4 tests)
+- Extended job-liveness coverage: age-threshold + PID-reuse mitigation (4 tests)
 
 **Not done (deliberate / future):**
 
 - No Linux real-host auth verification (probe list is best-effort; see Assumptions).
 - No end-to-end test of `/copilot:adversarial-review` against the real binary — it shares `runCopilotPrompt` with `review`, so the integration test covers the underlying path.
-- No CI workflow (no `.github/workflows/`). Adding `npm test` + `npm run version:check` to CI is a clean next step.
-- No `CHANGELOG.md` — commit messages are the changelog.
-- No marketplace-publish script.
+- No `CHANGELOG.md` — commit messages and the GitHub Releases page are the changelog.
+- No `npm run publish-release` wrapper (see "Remaining work" below).
 
 ## Remaining work
 
-Per DESIGN.md §5:
+The DESIGN.md §5 menu is **fully shipped** as of 0.2.0. The only intentionally-open item is:
 
-- **[ ] §5.7 marketplace publish.** Deliberately deferred. Hand-off note for the next contributor lives in `docs/RELEASE.md` under "What the script does NOT do".
+- **[ ] §5.7b "marketplace publish" wrapper.** Today the release flow is manual (`bump-version` → commit → tag → push → `gh release create`) per `docs/RELEASE.md`. A thin `npm run publish-release` script that chains those steps would close the last v1.x backlog item. **Open question:** since the GitHub repo *is* the marketplace (users install via `/plugin marketplace add warischa/copilot-plugin-cc`), this could equally be closed as a no-op. Hasn't been decided.
 
-Optional follow-ups surfaced during the build (also captured in DESIGN.md §5 "Optional follow-ups"):
+Surfaced-but-not-tracked-as-required:
 
-- **[ ] Cut a `0.1.1` patch release** capturing everything since v1 MVP. Exercises the new bump-version flow end-to-end.
-- **[ ] Add CI workflow** running `npm test` + `npm run version:check`.
-- **[ ] Linux real-host probe verification.**
-- **[ ] `COPILOT_INTEGRATION=1` env gate** for the integration test if API-cost-per-`npm-test` becomes friction.
-- **[ ] Tune the adversarial-review prompt voice** — currently ports codex's enterprise-flavored attack surface.
-- **[ ] Extend plugin-config schema** with `denyTools` / `addDirs` / `defaultPromptFile`.
-- **[ ] Surface liveness sweep count** in `/copilot:status` output.
-- **[ ] Age threshold in liveness sweep** to mitigate PID reuse (see DESIGN.md §4).
+- **[ ] Linux real-host auth verification** — see Assumptions.
+- **[ ] Move repo to a real `Claude-Copilot` GH org** if/when one is created. Identity placeholder is documented in DESIGN.md §2.7 so the transfer is one `gh api -X POST .../transfer` away.
 
 ## Next steps
 
@@ -146,6 +153,6 @@ For the next Claude Code session, in order:
 
 - This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns. CLAUDE.md's "Conceptual source" section spells this out.
 - The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account). This is **a resolved decision**, not a TODO — see [DESIGN.md §2.7 "Project identity"](DESIGN.md) for the rationale. The plan is: if a real `Claude-Copilot` GH org appears later, transfer the repo and the manifest identity keeps working untouched.
-- Commits on `main` so far (newest first): `c786dd0`, `f95b485`, `d9ed30a`, `753f163`, `2e2d87e`, `6cae525`, `0d3cd6f`, `f556d9d`, `d7e73bb`.
+- Commits on `main` so far (newest first): `c2bb7b8` (identity doc), `86e1a02` (Release 0.2.0), `fb9f5fb`, `912c8f1`, `a9be2a5`, `c5303bc`, `2074121`, `028aa6e` (Release 0.1.1), `2ba6885`, `c786dd0`, `f95b485`, `d9ed30a`, `753f163`, `2e2d87e`, `6cae525`, `0d3cd6f`, `f556d9d`, `d7e73bb` (initial). Tags: `v0.1.1`, `v0.2.0`.
 - Branch `main` is protected — no force-push, no deletion, linear history only. Routine commits and pushes are fine.
 - The `code-review-graph` build hook may regenerate `.code-review-graph/` at the repo root — it's in `.gitignore`.
