@@ -149,4 +149,80 @@ describe("sweepDeadJobs", () => {
     assert.equal(summary.swept.length, 0);
     assert.equal(listJobs(workspace)[0].status, "running");
   });
+
+  it("flips a long-running job with a still-alive pid as suspected PID-reuse", () => {
+    const startedAt = new Date("2025-01-01T00:00:00Z").toISOString();
+    upsertJob(workspace, {
+      id: "task-stale",
+      status: "running",
+      pid: 12345,
+      startedAt
+    });
+
+    // 8h after startedAt — exceeds the default 6h threshold.
+    const now = () => Date.parse("2025-01-01T08:00:00Z");
+    const summary = sweepDeadJobs(workspace, {
+      isProcessAlive: () => true, // pretend pid is still alive
+      now
+    });
+
+    assert.equal(summary.checked, 1);
+    assert.equal(summary.swept.length, 1);
+    assert.match(summary.swept[0].reason, /pid=12345 was reused/);
+    assert.equal(listJobs(workspace)[0].status, "failed");
+  });
+
+  it("leaves a long-running job alone when startedAt is missing", () => {
+    upsertJob(workspace, {
+      id: "task-no-start",
+      status: "running",
+      pid: 12345
+      // no startedAt — can't reason about age
+    });
+
+    const summary = sweepDeadJobs(workspace, {
+      isProcessAlive: () => true,
+      now: () => Date.now() + 24 * 60 * 60 * 1000 // pretend a day has passed
+    });
+
+    assert.equal(summary.swept.length, 0);
+    assert.equal(listJobs(workspace)[0].status, "running");
+  });
+
+  it("respects a custom maxRunningAgeMs threshold", () => {
+    const startedAt = new Date("2025-01-01T00:00:00Z").toISOString();
+    upsertJob(workspace, {
+      id: "task-young",
+      status: "running",
+      pid: 12345,
+      startedAt
+    });
+
+    const summary = sweepDeadJobs(workspace, {
+      isProcessAlive: () => true,
+      now: () => Date.parse("2025-01-01T00:00:10Z"), // 10s after start
+      maxRunningAgeMs: 60 * 60 * 1000 // 1h — way more than 10s
+    });
+
+    assert.equal(summary.swept.length, 0);
+  });
+
+  it("setting maxRunningAgeMs=0 disables the PID-reuse mitigation", () => {
+    const startedAt = new Date("2025-01-01T00:00:00Z").toISOString();
+    upsertJob(workspace, {
+      id: "task-ancient",
+      status: "running",
+      pid: 12345,
+      startedAt
+    });
+
+    const summary = sweepDeadJobs(workspace, {
+      isProcessAlive: () => true,
+      now: () => Date.parse("2030-01-01T00:00:00Z"), // 5 years later
+      maxRunningAgeMs: 0
+    });
+
+    assert.equal(summary.swept.length, 0);
+    assert.equal(listJobs(workspace)[0].status, "running");
+  });
 });

@@ -192,6 +192,13 @@ export function renderStatusReport(report) {
     ""
   ];
 
+  if (report.sweep && report.sweep.swept > 0) {
+    const noun = report.sweep.swept === 1 ? "job" : "jobs";
+    const ids = Array.isArray(report.sweep.ids) ? report.sweep.ids.join(", ") : "";
+    const idSuffix = ids ? ` (${ids})` : "";
+    lines.push(`Swept ${report.sweep.swept} orphan ${noun}${idSuffix}.`, "");
+  }
+
   if (report.running.length > 0) {
     appendActiveJobsTable(lines, report.running);
     lines.push("");

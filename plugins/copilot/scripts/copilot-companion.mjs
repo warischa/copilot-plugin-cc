@@ -807,8 +807,9 @@ async function handleStatus(argv) {
   // Sweep any orphan "running" jobs whose worker processes have died.
   // This must happen before snapshots are built so /copilot:status never
   // shows a zombie record.
+  let sweepSummary = null;
   try {
-    sweepDeadJobs(resolveWorkspaceRoot(cwd));
+    sweepSummary = sweepDeadJobs(resolveWorkspaceRoot(cwd));
   } catch {
     // Sweeping is best-effort. If state is corrupt or the workspace root
     // can't be resolved, fall through to the normal status flow rather
@@ -832,6 +833,13 @@ async function handleStatus(argv) {
   }
 
   const report = buildStatusSnapshot(cwd, { all: options.all });
+  if (sweepSummary && sweepSummary.swept?.length > 0) {
+    report.sweep = {
+      swept: sweepSummary.swept.length,
+      checked: sweepSummary.checked,
+      ids: sweepSummary.swept.map((entry) => entry.id)
+    };
+  }
   outputResult(options.json ? report : renderStatusReport(report), options.json);
 }
 

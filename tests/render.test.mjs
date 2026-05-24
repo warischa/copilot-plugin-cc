@@ -6,7 +6,8 @@ import {
   renderSetupReport,
   renderTaskResult,
   renderStoredJobResult,
-  renderCancelReport
+  renderCancelReport,
+  renderStatusReport
 } from "../plugins/copilot/scripts/lib/render.mjs";
 
 describe("renderReviewResult", () => {
@@ -84,5 +85,46 @@ describe("renderCancelReport", () => {
     const out = renderCancelReport({ id: "job-1", title: "T", summary: "S" });
     assert.match(out, /Cancelled job-1/);
     assert.match(out, /\/copilot:status/);
+  });
+});
+
+describe("renderStatusReport sweep line", () => {
+  it("renders the sweep line when one job was swept", () => {
+    const out = renderStatusReport({
+      running: [],
+      recent: [],
+      latestFinished: null,
+      sweep: { swept: 1, checked: 1, ids: ["task-abc"] }
+    });
+    assert.match(out, /Swept 1 orphan job \(task-abc\)\./);
+  });
+
+  it("uses plural noun and joins ids when multiple jobs were swept", () => {
+    const out = renderStatusReport({
+      running: [],
+      recent: [],
+      latestFinished: null,
+      sweep: { swept: 2, checked: 3, ids: ["a", "b"] }
+    });
+    assert.match(out, /Swept 2 orphan jobs \(a, b\)\./);
+  });
+
+  it("omits the sweep line when nothing was swept", () => {
+    const out = renderStatusReport({
+      running: [],
+      recent: [],
+      latestFinished: null,
+      sweep: { swept: 0, checked: 1, ids: [] }
+    });
+    assert.doesNotMatch(out, /Swept/);
+  });
+
+  it("omits the sweep line when sweep summary is absent", () => {
+    const out = renderStatusReport({
+      running: [],
+      recent: [],
+      latestFinished: null
+    });
+    assert.doesNotMatch(out, /Swept/);
   });
 });
