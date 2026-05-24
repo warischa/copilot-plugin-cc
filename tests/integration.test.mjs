@@ -21,9 +21,26 @@ const ORIGINAL_ENV = process.env.CLAUDE_PLUGIN_DATA;
 let tempDir;
 let skipReason = null;
 
+// Opt-in gate: `npm test` defaults to skipping the integration test so it
+// doesn't burn a real Copilot API call (~14s, one billable turn). Run with
+// `COPILOT_INTEGRATION=1 npm test` to exercise the live path. Truthy values
+// other than "1" (e.g. "true", "yes", "on") are also accepted.
+const INTEGRATION_GATE_VALUES = new Set(["1", "true", "yes", "on"]);
+function integrationGateEnabled(env = process.env) {
+  const raw = env.COPILOT_INTEGRATION;
+  if (raw == null) return false;
+  return INTEGRATION_GATE_VALUES.has(String(raw).trim().toLowerCase());
+}
+
 before(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "copilot-plugin-integration-"));
   process.env.CLAUDE_PLUGIN_DATA = tempDir;
+
+  if (!integrationGateEnabled()) {
+    skipReason =
+      "set COPILOT_INTEGRATION=1 to enable the live-copilot smoke test";
+    return;
+  }
 
   const status = getCopilotAuthStatus(REPO_ROOT);
   if (!status.available) {

@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Tests (Node ${{ matrix.node-version }} on ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Match the engines.node floor in package.json and add the latest LTS.
+        node-version: ["18.18", "20", "22"]
+        os: [ubuntu-latest]
+        include:
+          - os: macos-latest
+            node-version: "22"
+          - os: windows-latest
+            node-version: "22"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # No production deps — but install dev/optional anyway in case future
+      # additions land. `--ignore-scripts` keeps CI from running any package
+      # lifecycle hooks an attacker could smuggle in through a transitive dep.
+      - run: npm install --no-audit --no-fund --ignore-scripts
+
+      # Version metadata must stay in sync across the four manifest spots.
+      - run: npm run version:check
+
+      # Integration test (tests/integration.test.mjs) is opt-in via
+      # COPILOT_INTEGRATION=1. CI doesn't have the copilot binary, so it
+      # would auto-skip anyway — we leave the env var unset so the skip is
+      # explicit and the suite stays free of real Copilot API calls.
+      - run: npm test
