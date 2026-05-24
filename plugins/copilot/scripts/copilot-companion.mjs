@@ -64,6 +64,7 @@ function printUsage() {
       "Usage:",
       "  node scripts/copilot-companion.mjs setup [--json]",
       "  node scripts/copilot-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>]",
+      "  node scripts/copilot-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [focus ...]",
       "  node scripts/copilot-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <low|medium|high|xhigh>] [prompt]",
       "  node scripts/copilot-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/copilot-companion.mjs result [job-id] [--json]",
@@ -206,6 +207,16 @@ function buildReviewPrompt(context) {
   });
 }
 
+function buildAdversarialReviewPrompt(context, userFocus) {
+  const template = loadPromptTemplate(ROOT_DIR, "adversarial-review");
+  const focus = String(userFocus ?? "").trim();
+  return interpolateTemplate(template, {
+    TARGET_LABEL: context.target.label,
+    USER_FOCUS: focus || "(no specific focus area was provided)",
+    REVIEW_INPUT: context.content
+  });
+}
+
 async function executeReviewRun(request) {
   ensureCopilotAvailable(request.cwd);
   ensureGitRepository(request.cwd);
@@ -260,6 +271,66 @@ async function executeReviewRun(request) {
     rendered,
     summary: firstMeaningfulLine(result.finalMessage, "Review completed."),
     jobTitle: "Copilot Review",
+    jobClass: "review",
+    targetLabel: target.label
+  };
+}
+
+async function executeAdversarialReviewRun(request) {
+  ensureCopilotAvailable(request.cwd);
+  ensureGitRepository(request.cwd);
+
+  const target = resolveReviewTarget(request.cwd, {
+    base: request.base,
+    scope: request.scope
+  });
+
+  const context = collectReviewContext(request.cwd, target);
+  const prompt = buildAdversarialReviewPrompt(context, request.userFocus);
+
+  const result = await runCopilotPrompt(context.repoRoot, {
+    prompt,
+    model: request.model,
+    allowAllTools: true,
+    denyTools: ["write", "edit", "shell"],
+    onProgress: request.onProgress
+  });
+
+  const payload = {
+    review: "Adversarial Review",
+    target,
+    userFocus: request.userFocus || null,
+    threadId: result.threadId,
+    context: {
+      repoRoot: context.repoRoot,
+      branch: context.branch,
+      summary: context.summary
+    },
+    copilot: {
+      status: result.status,
+      stderr: result.stderr,
+      stdout: result.finalMessage
+    },
+    rawOutput: result.finalMessage
+  };
+
+  const rendered = renderReviewResult(
+    {
+      status: result.status,
+      stdout: result.finalMessage,
+      stderr: result.stderr
+    },
+    { reviewLabel: "Adversarial Review", targetLabel: target.label }
+  );
+
+  return {
+    exitStatus: result.status,
+    threadId: result.threadId,
+    turnId: result.turnId,
+    payload,
+    rendered,
+    summary: firstMeaningfulLine(result.finalMessage, "Adversarial review completed."),
+    jobTitle: "Copilot Adversarial Review",
     jobClass: "review",
     targetLabel: target.label
   };
@@ -550,6 +621,47 @@ async function handleReview(argv) {
   );
 }
 
+async function handleAdversarialReview(argv) {
+  const { options, positionals } = parseCommandInput(argv, {
+    valueOptions: ["base", "scope", "model", "cwd"],
+    booleanOptions: ["json", "background", "wait"],
+    aliasMap: {
+      m: "model"
+    }
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const target = resolveReviewTarget(cwd, {
+    base: options.base,
+    scope: options.scope
+  });
+  const userFocus = positionals.join(" ").trim();
+
+  const job = createCompanionJob({
+    prefix: "adversarial-review",
+    kind: "review",
+    title: "Copilot Adversarial Review",
+    workspaceRoot,
+    jobClass: "review",
+    summary: `Adversarial review ${target.label}${userFocus ? ` — focus: ${userFocus}` : ""}`
+  });
+
+  await runForegroundCommand(
+    job,
+    (progress) =>
+      executeAdversarialReviewRun({
+        cwd,
+        base: options.base,
+        scope: options.scope,
+        model: options.model,
+        userFocus,
+        onProgress: progress
+      }),
+    { json: options.json }
+  );
+}
+
 async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "effort", "cwd", "prompt-file"],
@@ -797,6 +909,9 @@ async function main() {
       break;
     case "review":
       await handleReview(argv);
+      break;
+    case "adversarial-review":
+      await handleAdversarialReview(argv);
       break;
     case "task":
       await handleTask(argv);
