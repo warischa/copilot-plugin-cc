@@ -14,7 +14,9 @@ jobs:
       fail-fast: false
       matrix:
         # Match the engines.node floor in package.json and add the latest LTS.
-        node-version: ["18.18", "20", "22"]
+        # Node 18 hit EOL in April 2025; the `node:test` runner in 18.x also
+        # has hook-ordering differences from 20+ that broke the suite.
+        node-version: ["20", "22"]
         os: [ubuntu-latest]
         include:
           - os: macos-latest

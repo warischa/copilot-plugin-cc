@@ -37,18 +37,22 @@ function writeConfig(name, payload) {
 
 describe("resolvePluginConfigPath", () => {
   it("uses COPILOT_PLUGIN_CONFIG_PATH when set", () => {
+    const candidate = path.join("/tmp", "x.json");
     const resolved = resolvePluginConfigPath({
-      env: { COPILOT_PLUGIN_CONFIG_PATH: "/tmp/x.json" }
+      env: { COPILOT_PLUGIN_CONFIG_PATH: candidate }
     });
-    assert.equal(resolved, path.resolve("/tmp/x.json"));
+    assert.equal(resolved, path.resolve(candidate));
   });
 
   it("falls back to ~/.claude/plugins/copilot/config.json", () => {
-    const resolved = resolvePluginConfigPath({
-      env: {},
-      homedir: "/home/test"
-    });
-    assert.equal(resolved, "/home/test/.claude/plugins/copilot/config.json");
+    const homedir = path.join(path.sep, "home", "test");
+    const resolved = resolvePluginConfigPath({ env: {}, homedir });
+    // Build the expected path with path.join so the test is platform-neutral
+    // (forward slashes on POSIX, backslashes on Windows).
+    assert.equal(
+      resolved,
+      path.join(homedir, ".claude", "plugins", "copilot", "config.json")
+    );
   });
 });
 

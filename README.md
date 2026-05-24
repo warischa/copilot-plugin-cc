@@ -17,7 +17,7 @@ This plugin gives Claude Code users a workflow that mirrors what `openai/codex-p
   - Install: `npm install -g @github/copilot`
   - Auth: `copilot login` (or set `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`)
   - Requires a GitHub Copilot subscription
-- **Node.js 18.18+**
+- **Node.js 20+**
 - **git** (commands operate on the current repository)
 
 ## Install

@@ -190,7 +190,7 @@ copilot-plugin-cc/
 ├── DESIGN.md                           # this file
 ├── LICENSE                             # MIT
 ├── NOTICE                              # attribution
-└── package.json                        # type=module, node ≥18.18
+└── package.json                        # type=module, node ≥20.0.0
 ```
 
 See `CLAUDE.md` for the "what to touch when extending" map.

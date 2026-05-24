@@ -49,7 +49,7 @@ All slash commands run against the **current git repository**. Job state is scop
 - **GitHub Copilot CLI** installed and authenticated
   - Install: `npm install -g @github/copilot`
   - Auth: `copilot login` (or set `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`)
-- **Node.js 18.18+**
+- **Node.js 20+**
 - **git** (commands operate on the current repository)
 
 ## Common flags
