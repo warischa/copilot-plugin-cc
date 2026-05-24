@@ -14,6 +14,7 @@ import {
   REVIEW_BASELINE_DENY_TOOLS
 } from "../plugins/copilot/scripts/copilot-companion.mjs";
 import {
+  buildCopilotArgs,
   detectInstructionsFiles,
   extractVersionLine
 } from "../plugins/copilot/scripts/lib/copilot.mjs";
@@ -158,5 +159,73 @@ describe("D3 detectInstructionsFiles", () => {
     assert.equal(found.length, 3);
     const scopes = found.map((entry) => entry.scope).sort();
     assert.deepEqual(scopes, ["global", "repo", "repo"]);
+  });
+});
+
+describe("buildCopilotArgs (D5+D6+D8)", () => {
+  it("baseline contains JSON output, no-color, no-auto-update, allow-all-tools", () => {
+    const args = buildCopilotArgs({ prompt: "hi" });
+    assert.deepEqual(args, [
+      "-p",
+      "hi",
+      "--output-format",
+      "json",
+      "--no-color",
+      "--no-auto-update",
+      "--allow-all-tools"
+    ]);
+  });
+
+  it("D5: planMode pushes --plan", () => {
+    const args = buildCopilotArgs({ prompt: "x", planMode: true });
+    assert.ok(args.includes("--plan"));
+    assert.ok(!args.includes("--autopilot"));
+  });
+
+  it("D5+D6: planMode takes precedence over autopilot (mutually exclusive)", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      planMode: true,
+      autopilot: true,
+      maxAutopilotContinues: 9
+    });
+    assert.ok(args.includes("--plan"));
+    assert.ok(!args.includes("--autopilot"));
+    assert.ok(!args.includes("--max-autopilot-continues"));
+  });
+
+  it("D6: autopilot pushes --autopilot and forwards continues count", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      autopilot: true,
+      maxAutopilotContinues: 7
+    });
+    assert.ok(args.includes("--autopilot"));
+    const idx = args.indexOf("--max-autopilot-continues");
+    assert.ok(idx >= 0);
+    assert.equal(args[idx + 1], "7");
+  });
+
+  it("D6: --max-autopilot-continues only appears when value is a positive number", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      autopilot: true,
+      maxAutopilotContinues: 0
+    });
+    assert.ok(args.includes("--autopilot"));
+    assert.ok(!args.includes("--max-autopilot-continues"));
+  });
+
+  it("D8: noCustomInstructions pushes --no-custom-instructions", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      noCustomInstructions: true
+    });
+    assert.ok(args.includes("--no-custom-instructions"));
+  });
+
+  it("D8: omits --no-custom-instructions by default", () => {
+    const args = buildCopilotArgs({ prompt: "x" });
+    assert.ok(!args.includes("--no-custom-instructions"));
   });
 });

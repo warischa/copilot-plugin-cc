@@ -8,6 +8,8 @@ Use the [GitHub Copilot CLI](https://github.com/features/copilot/cli) from insid
 |---|---|
 | `/copilot:setup` | Verify the Copilot CLI is installed and authenticated. Offers to install via npm if missing. |
 | `/copilot:review` | Run a read-only Copilot code review on the working tree or a branch diff. |
+| `/copilot:adversarial-review` | Challenge-style review that questions implementation approach, tradeoffs, and assumptions. |
+| `/copilot:plan` | Use Copilot's plan mode (`--plan`) to produce a structured implementation plan — no code is written. |
 | `/copilot:rescue` | Delegate a task to Copilot through the `copilot-rescue` subagent (investigate, fix, continue prior work). |
 | `/copilot:status` | List active and recent Copilot jobs for the current repository. |
 | `/copilot:result` | Show the stored final output for a finished Copilot job. |
@@ -42,6 +44,16 @@ All slash commands run against the **current git repository**. Job state is scop
 /copilot:rescue investigate why CI is failing
 /copilot:rescue --background --resume continue applying the fix
 /copilot:rescue --model gpt-5.4 --effort high redesign the cache layer
+/copilot:rescue --autopilot --max-autopilot-continues 10 refactor the data layer
+```
+
+```bash
+/copilot:plan add OAuth2 with Google and GitHub providers
+/copilot:plan --effort high migrate from REST to GraphQL in the public API
+```
+
+```bash
+/copilot:adversarial-review --no-custom-instructions     # fresh-eyes review, ignores AGENTS.md
 ```
 
 ## Requirements
@@ -63,6 +75,9 @@ All slash commands run against the **current git repository**. Job state is scop
 - `--resume` — for `/copilot:rescue`, continue the latest rescue session in this repo
 - `--fresh` — for `/copilot:rescue`, force a new session (skip the resume prompt)
 - `--write` — for `/copilot:rescue`, allow Copilot to edit files (default; rescue is write-capable)
+- `--autopilot` — for `/copilot:rescue`, run Copilot in autopilot mode (multi-turn auto-continue)
+- `--max-autopilot-continues <N>` — cap the number of autopilot turns (Copilot default: 5)
+- `--no-custom-instructions` — for `/copilot:adversarial-review`, bypass `AGENTS.md` / repo instructions for a fresh-eyes review
 
 ## How it works
 
@@ -117,7 +132,8 @@ The plugin reads `~/.claude/plugins/copilot/config.json` (override with `COPILOT
 ## Not in this version
 
 - Stop-time review gate (Stop hook) — not shipped yet
-- `/copilot:plan` (uses Copilot's `--mode plan`) — under consideration for 0.5.0
+- `/copilot:share` (Copilot's `--share` flag for markdown export) — tracked for a future release
+- MCP plumbing (`--add-github-mcp-tool`, `--additional-mcp-config`) — tracked for a future release
 
 ## License
 

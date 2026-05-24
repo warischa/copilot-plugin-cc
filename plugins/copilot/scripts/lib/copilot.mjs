@@ -464,7 +464,7 @@ export function extractTouchedFilePath(event) {
   return candidate;
 }
 
-function buildCopilotArgs(options) {
+export function buildCopilotArgs(options) {
   const args = [];
 
   if (options.prompt) {
@@ -495,6 +495,24 @@ function buildCopilotArgs(options) {
 
   if (options.sessionName) {
     args.push("--name", options.sessionName);
+  }
+
+  // D5: plan mode produces a structured plan.md before any code is written.
+  // D6: autopilot mode lets Copilot auto-continue across multiple turns.
+  // Mutually exclusive at the CLI level — we only pass one if both are set.
+  if (options.planMode) {
+    args.push("--plan");
+  } else if (options.autopilot) {
+    args.push("--autopilot");
+    if (Number.isFinite(options.maxAutopilotContinues) && options.maxAutopilotContinues > 0) {
+      args.push("--max-autopilot-continues", String(options.maxAutopilotContinues));
+    }
+  }
+
+  // D8: bypass AGENTS.md / .github/copilot-instructions for "fresh eyes"
+  // reviews. Opt-in — defaults to the agent picking up repo instructions.
+  if (options.noCustomInstructions) {
+    args.push("--no-custom-instructions");
   }
 
   if (Array.isArray(options.addDirs)) {

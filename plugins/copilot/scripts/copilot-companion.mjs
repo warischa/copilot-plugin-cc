@@ -63,7 +63,9 @@ import {
 const ROOT_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const DEFAULT_STATUS_WAIT_TIMEOUT_MS = 240000;
 const DEFAULT_STATUS_POLL_INTERVAL_MS = 2000;
-const VALID_REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
+// Mirrors plugin-config.mjs VALID_EFFORTS. Kept in sync with the
+// `copilot help` choices for `--effort, --reasoning-effort`.
+const VALID_REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
 function printUsage() {
   console.log(
@@ -71,8 +73,9 @@ function printUsage() {
       "Usage:",
       "  node scripts/copilot-companion.mjs setup [--json]",
       "  node scripts/copilot-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>]",
-      "  node scripts/copilot-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [focus ...]",
-      "  node scripts/copilot-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model>] [--effort <low|medium|high|xhigh>] [prompt]",
+      "  node scripts/copilot-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--no-custom-instructions] [focus ...]",
+      "  node scripts/copilot-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--autopilot [--max-autopilot-continues <N>]] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [prompt]",
+      "  node scripts/copilot-companion.mjs plan [--background] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [prompt]",
       "  node scripts/copilot-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/copilot-companion.mjs result [job-id] [--json]",
       "  node scripts/copilot-companion.mjs cancel [job-id] [--json]"
@@ -92,6 +95,21 @@ function outputCommandResult(payload, rendered, asJson) {
   outputResult(asJson ? payload : rendered, asJson);
 }
 
+// Parse a CLI value expected to be a positive integer (e.g.
+// --max-autopilot-continues). Returns null when the value was not
+// supplied. Throws for anything that isn't a positive integer so the
+// user gets a clear error instead of a silently-dropped flag.
+export function parsePositiveInteger(value, flagName) {
+  if (value == null || value === "") {
+    return null;
+  }
+  const num = Number(value);
+  if (!Number.isInteger(num) || num <= 0) {
+    throw new Error(`--${flagName} must be a positive integer, got: ${value}`);
+  }
+  return num;
+}
+
 function normalizeReasoningEffort(effort) {
   if (effort == null) {
     return null;
@@ -102,7 +120,7 @@ function normalizeReasoningEffort(effort) {
   }
   if (!VALID_REASONING_EFFORTS.has(normalized)) {
     throw new Error(
-      `Unsupported reasoning effort "${effort}". Copilot supports: low, medium, high, xhigh.`
+      `Unsupported reasoning effort "${effort}". Copilot supports: none, low, medium, high, xhigh, max.`
     );
   }
   return normalized;
@@ -336,6 +354,7 @@ async function executeAdversarialReviewRun(request) {
     allowAllTools: true,
     denyTools: buildReviewDenyTools(request.denyTools),
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
+    noCustomInstructions: Boolean(request.noCustomInstructions),
     onProgress: request.onProgress
   });
 
@@ -412,6 +431,8 @@ async function executeTaskRun(request) {
     allowAllTools: true,
     denyTools: Array.isArray(request.denyTools) ? request.denyTools : undefined,
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
+    autopilot: Boolean(request.autopilot),
+    maxAutopilotContinues: request.maxAutopilotContinues ?? null,
     onProgress: request.onProgress
   });
 
@@ -469,6 +490,8 @@ export function getJobKindLabel(jobClass) {
       return "adversarial-review";
     case "task":
       return "task";
+    case "plan":
+      return "plan";
     case "rescue":
       return "rescue";
     default:
@@ -522,7 +545,9 @@ function buildTaskRequest({
   resumeLast,
   jobId,
   denyTools,
-  addDirs
+  addDirs,
+  autopilot = false,
+  maxAutopilotContinues = null
 }) {
   return {
     cwd,
@@ -533,7 +558,12 @@ function buildTaskRequest({
     resumeLast,
     jobId,
     denyTools: Array.isArray(denyTools) ? [...denyTools] : undefined,
-    addDirs: Array.isArray(addDirs) ? [...addDirs] : undefined
+    addDirs: Array.isArray(addDirs) ? [...addDirs] : undefined,
+    autopilot: Boolean(autopilot),
+    maxAutopilotContinues:
+      Number.isFinite(maxAutopilotContinues) && maxAutopilotContinues > 0
+        ? maxAutopilotContinues
+        : null
   };
 }
 
@@ -633,9 +663,17 @@ function spawnDetachedTaskWorker(cwd, jobId) {
   return child;
 }
 
-function enqueueBackgroundTask(cwd, job, request) {
+function enqueueBackgroundTask(cwd, job, request, options = {}) {
   const { logFile } = createTrackedProgress(job);
   appendLogLine(logFile, "Queued for background execution.");
+
+  // Tag the stored request with the job class so the worker dispatches to
+  // the right executor (executeTaskRun for "task", executePlanRun for
+  // "plan"). Defaults to "task" for backward compatibility.
+  const taggedRequest = {
+    ...request,
+    jobClass: options.jobClass ?? request?.jobClass ?? "task"
+  };
 
   const child = spawnDetachedTaskWorker(cwd, job.id);
   const queuedRecord = {
@@ -644,7 +682,7 @@ function enqueueBackgroundTask(cwd, job, request) {
     phase: "queued",
     pid: child.pid ?? null,
     logFile,
-    request
+    request: taggedRequest
   };
   writeJobFile(job.workspaceRoot, job.id, queuedRecord);
   upsertJob(job.workspaceRoot, queuedRecord);
@@ -709,7 +747,7 @@ async function handleReview(argv) {
 async function handleAdversarialReview(argv) {
   const { options: rawOptions, positionals } = parseCommandInput(argv, {
     valueOptions: ["base", "scope", "model", "cwd"],
-    booleanOptions: ["json", "background", "wait"],
+    booleanOptions: ["json", "background", "wait", "no-custom-instructions"],
     aliasMap: {
       m: "model"
     }
@@ -747,6 +785,7 @@ async function handleAdversarialReview(argv) {
         userFocus,
         denyTools: Array.isArray(options.denyTools) ? options.denyTools : undefined,
         addDirs: Array.isArray(options.addDirs) ? options.addDirs : undefined,
+        noCustomInstructions: Boolean(options["no-custom-instructions"]),
         onProgress: progress
       }),
     { json: options.json }
@@ -755,8 +794,16 @@ async function handleAdversarialReview(argv) {
 
 async function handleTask(argv) {
   const { options: rawOptions, positionals } = parseCommandInput(argv, {
-    valueOptions: ["model", "effort", "cwd", "prompt-file"],
-    booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background"],
+    valueOptions: ["model", "effort", "cwd", "prompt-file", "max-autopilot-continues"],
+    booleanOptions: [
+      "json",
+      "write",
+      "resume-last",
+      "resume",
+      "fresh",
+      "background",
+      "autopilot"
+    ],
     aliasMap: {
       m: "model"
     }
@@ -772,6 +819,14 @@ async function handleTask(argv) {
   const effort = normalizeReasoningEffort(options.effort);
   const denyTools = Array.isArray(options.denyTools) ? options.denyTools : undefined;
   const addDirs = Array.isArray(options.addDirs) ? options.addDirs : undefined;
+  const autopilot = Boolean(options.autopilot);
+  const maxAutopilotContinues = parsePositiveInteger(
+    options["max-autopilot-continues"],
+    "max-autopilot-continues"
+  );
+  if (maxAutopilotContinues != null && !autopilot) {
+    throw new Error("--max-autopilot-continues requires --autopilot.");
+  }
   const prompt = readTaskPrompt(cwd, options, positionals);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);
@@ -799,7 +854,9 @@ async function handleTask(argv) {
       resumeLast,
       jobId: job.id,
       denyTools,
-      addDirs
+      addDirs,
+      autopilot,
+      maxAutopilotContinues
     });
     const { payload } = enqueueBackgroundTask(cwd, job, request);
     outputCommandResult({ ...payload, jobId: job.id, title: job.title }, renderQueuedTaskLaunch({ ...payload, jobId: job.id, title: job.title }), options.json);
@@ -819,6 +876,135 @@ async function handleTask(argv) {
         resumeLast,
         jobId: job.id,
         denyTools,
+        addDirs,
+        autopilot,
+        maxAutopilotContinues,
+        onProgress: progress
+      }),
+    { json: options.json }
+  );
+}
+
+// D5 / 0.5.0: /copilot:plan runs Copilot in plan mode (--plan) to
+// produce a structured implementation plan. This is a thin variant of
+// the task flow with three forced settings:
+//   - --plan tells Copilot to use plan mode (no code edits expected).
+//   - We pass deny-tool=write,shell to enforce read-only as defense-in-
+//     depth in case Copilot's plan mode ever tries to mutate the tree.
+//   - We do NOT enable autopilot or resume — plans are single-shot.
+async function executePlanRun(request) {
+  const workspaceRoot = resolveWorkspaceRoot(request.cwd);
+  ensureCopilotAvailable(request.cwd);
+
+  if (!request.prompt) {
+    throw new Error("Provide a prompt describing what to plan.");
+  }
+
+  const result = await runCopilotPrompt(workspaceRoot, {
+    prompt: request.prompt,
+    sessionName: buildPersistentTaskSessionName(`plan: ${request.prompt}`),
+    model: request.model,
+    effort: request.effort,
+    allowAllTools: true,
+    planMode: true,
+    denyTools: ["write", "shell"],
+    addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
+    onProgress: request.onProgress
+  });
+
+  const rawOutput = typeof result.finalMessage === "string" ? result.finalMessage : "";
+  const failureMessage = result.stderr ?? "";
+  const touchedFiles = Array.isArray(result.touchedFiles) ? result.touchedFiles : [];
+  const rendered = renderTaskResult({
+    rawOutput,
+    failureMessage,
+    touchedFiles
+  });
+  const payload = {
+    status: result.status,
+    threadId: result.threadId,
+    rawOutput,
+    touchedFiles
+  };
+
+  return {
+    exitStatus: result.status,
+    threadId: result.threadId,
+    turnId: result.turnId,
+    payload,
+    rendered,
+    summary: firstMeaningfulLine(rawOutput, "Plan ready."),
+    jobTitle: "Copilot Plan",
+    jobClass: "plan",
+    write: false
+  };
+}
+
+async function handlePlan(argv) {
+  const { options: rawOptions, positionals } = parseCommandInput(argv, {
+    valueOptions: ["model", "effort", "cwd", "prompt-file"],
+    booleanOptions: ["json", "background"],
+    aliasMap: {
+      m: "model"
+    }
+  });
+
+  const pluginConfig = loadPluginConfig();
+  reportPluginConfigWarnings(pluginConfig);
+  const options = applyPluginDefaults(rawOptions, pluginConfig);
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const model = options.model ?? null;
+  const effort = normalizeReasoningEffort(options.effort);
+  const addDirs = Array.isArray(options.addDirs) ? options.addDirs : undefined;
+  const prompt = readTaskPrompt(cwd, options, positionals);
+  const redactSummary = options.redactSummary === true;
+
+  if (!prompt) {
+    throw new Error("Provide a prompt, a prompt file, or piped stdin describing what to plan.");
+  }
+
+  const summary = redactSummary ? "[summary redacted]" : shorten(prompt);
+  const job = createCompanionJob({
+    prefix: "plan",
+    kind: "plan",
+    title: "Copilot Plan",
+    workspaceRoot,
+    jobClass: "plan",
+    summary,
+    write: false
+  });
+
+  if (options.background) {
+    ensureCopilotAvailable(cwd);
+    const request = {
+      cwd,
+      model,
+      effort,
+      prompt,
+      jobId: job.id,
+      addDirs
+    };
+    const { payload } = enqueueBackgroundTask(cwd, job, request, {
+      jobClass: "plan"
+    });
+    outputCommandResult(
+      { ...payload, jobId: job.id, title: job.title },
+      renderQueuedTaskLaunch({ ...payload, jobId: job.id, title: job.title }),
+      options.json
+    );
+    return;
+  }
+
+  await runForegroundCommand(
+    job,
+    (progress) =>
+      executePlanRun({
+        cwd,
+        model,
+        effort,
+        prompt,
         addDirs,
         onProgress: progress
       }),
@@ -856,17 +1042,21 @@ async function handleTaskWorker(argv) {
       logFile: storedJob.logFile ?? null
     }
   );
+  // Dispatch on the stored request's jobClass so plan jobs go to the
+  // plan executor and tasks go to the task executor. Defaults to "task"
+  // for jobs queued by older plugin versions before the tag existed.
+  const executor =
+    request.jobClass === "plan"
+      ? () => executePlanRun({ ...request, onProgress: progress })
+      : () => executeTaskRun({ ...request, onProgress: progress });
+
   await runTrackedJob(
     {
       ...storedJob,
       workspaceRoot,
       logFile
     },
-    () =>
-      executeTaskRun({
-        ...request,
-        onProgress: progress
-      }),
+    executor,
     { logFile }
   );
 }
@@ -1040,6 +1230,9 @@ async function main() {
       break;
     case "task-worker":
       await handleTaskWorker(argv);
+      break;
+    case "plan":
+      await handlePlan(argv);
       break;
     case "status":
       await handleStatus(argv);

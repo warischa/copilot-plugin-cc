@@ -180,15 +180,24 @@ After running a real end-to-end test against Copilot CLI 1.0.52 and reading the 
 - **[x] U1 / 0.4.0** — Suppress `Phase: done` when status is `completed` (and the analogous redundant pairs for `failed`/`cancelled`). New `isRedundantPhase` helper in `lib/render.mjs`.
 - **[x] U2 / 0.4.0** — New `redactSummary` plugin-config flag. When `true`, stored task summaries show `[summary redacted]` instead of the first ~96 chars of the prompt. Default `false` (no behavior change for existing users); documented in README under "Plugin config" with the privacy rationale.
 
-Deferred items from the same review (see SESSION-HANDOFF):
+### Agentic upgrade (0.5.0)
+
+After 0.4.0, three Copilot-native features remained on the table. Shipped in 0.5.0:
+
+- **[x] D5** — New `/copilot:plan` slash command and `plan` companion subcommand. Runs Copilot with `--plan` to produce a structured implementation plan with no code edits. Defense-in-depth deny list (`write`, `shell`). Job tracking integrates with `/copilot:status` / `/copilot:result` via a new `jobClass: "plan"` and `kindLabel: "plan"`. Background path supported via worker-side dispatch on `request.jobClass`. Smoke-tested against Copilot CLI 1.0.52 end-to-end (32s round-trip on a short prompt).
+- **[x] D6** — `/copilot:task` (and `/copilot:rescue`) gained `--autopilot` and `--max-autopilot-continues <N>`. `parsePositiveInteger` helper validates the count; passing `--max-autopilot-continues` without `--autopilot` errors out explicitly instead of being silently dropped.
+- **[x] D8** — `/copilot:adversarial-review` gained `--no-custom-instructions` for fresh-eyes reviews that bypass `AGENTS.md` / repo conventions.
+
+The new flags flow through one place — `buildCopilotArgs` in `lib/copilot.mjs` — which is now exported and has direct unit-test coverage for every combination (plan-vs-autopilot mutual exclusion, autopilot continues guard, no-custom-instructions opt-in).
+
+Also fixed a missed-in-0.4.0 bug: the companion's `VALID_REASONING_EFFORTS` set was out of sync with the plugin-config one (still rejected `none` and `max`). Synced both to the full Copilot set.
+
+Deferred items still on the menu:
 
 - **[ ] D2** — Verify whether `COPILOT_GITHUB_TOKEN` env var is real. Not in docs; harmless to keep as a probe.
 - **[ ] D4** — Document the full resume forms (`--resume=<name>`, `--connect=<sessionId>`) in plugin README.
-- **[ ] D5** — `/copilot:plan` subcommand using `--mode plan`. Tracked for 0.5.0.
-- **[ ] D6** — Expose `--autopilot` + `--max-autopilot-continues`. Tracked for 0.5.0+.
 - **[ ] D7** — `--share` option on review for markdown export. Low priority.
-- **[ ] D8** — `--no-custom-instructions` opt-in on `/copilot:adversarial-review` for "fresh eyes" use case. Tracked for 0.5.0.
-- **[ ] D9** — MCP plumbing (`--add-github-mcp-tool`, `--additional-mcp-config`). Tracked for 0.5.0+.
+- **[ ] D9** — MCP plumbing (`--add-github-mcp-tool`, `--additional-mcp-config`). Tracked for a future release.
 - **[ ] U3** — Route `[copilot] ...` progress lines to stderr instead of stdout. Low priority.
 
 ### Optional follow-ups — all shipped in 0.2.0

@@ -147,18 +147,25 @@ Also threaded an `isDirectInvocation` guard around `main()` in `copilot-companio
 - **U1:** Suppress redundant `Phase: done` line when status is `completed` (and the analogous pairs for `failed`/`cancelled`). New `isRedundantPhase` helper in `lib/render.mjs`.
 - **U2:** New `redactSummary: boolean` plugin-config option. When `true`, stored task summaries show `[summary redacted]` instead of the first ~96 chars of the prompt. Default `false` (no behavior change). Documented in README under "Plugin config" with the privacy rationale.
 
+### `v0.5.0` (D5+D6+D8 — agentic upgrade)
+
+The largest functional release since `v0.1.0`. Three Copilot-native features that were missed in the original port now ship as first-class plugin features:
+
+- **D5 — `/copilot:plan`:** New slash command + companion subcommand that runs Copilot with `--plan`. Returns a structured implementation plan; no code edits. Defense-in-depth deny list (`write`, `shell`). New `jobClass: "plan"` + `kindLabel: "plan"`. Background path supported by adding a `jobClass`-aware dispatch inside the task worker. Smoke-tested end-to-end against Copilot CLI 1.0.52 (32s round-trip on a short prompt; output looked good).
+- **D6 — `--autopilot` on tasks:** `/copilot:task` and `/copilot:rescue` accept `--autopilot` and `--max-autopilot-continues <N>`. New `parsePositiveInteger` helper validates the count. Passing `--max-autopilot-continues` without `--autopilot` errors out explicitly instead of being silently dropped.
+- **D8 — `--no-custom-instructions` on adversarial review:** Opt-in flag that bypasses `AGENTS.md` / repo `copilot-instructions` for fresh-eyes adversarial reviews.
+
+All flags flow through one place — `buildCopilotArgs` in `lib/copilot.mjs` — which is now `export`ed and has direct unit-test coverage. Also fixed a missed sync from 0.4.0: the companion's `VALID_REASONING_EFFORTS` was still on the codex-era set (rejected `none`, `max`); now matches plugin-config.
+
 ### Test count
 
-97 (post-`v0.3.0`) → 134 unit tests + 1 skipped integration. All green on Node 22 / macOS. CI will validate Node 20/22 × Linux/macOS/Windows on push.
+97 (post-`v0.3.0`) → 134 (post-`v0.4.0`) → 141 (post-`v0.5.0`). All green on Node 22 / macOS. CI will validate Node 20/22 × Linux/macOS/Windows on push.
 
 ## Deferred / not in scope this session
 
 - **[ ] D2** Verify `COPILOT_GITHUB_TOKEN` env var actually exists in Copilot CLI. Not in current docs; harmless to keep as an auth probe.
 - **[ ] D4** Document full resume forms (`--resume=<name>`, `--connect=<sessionId>`) in README.
-- **[ ] D5** `/copilot:plan` subcommand using `--mode plan`. Highest-value future feature.
-- **[ ] D6** `--autopilot` + `--max-autopilot-continues` exposure.
 - **[ ] D7** `--share` for review markdown export.
-- **[ ] D8** `--no-custom-instructions` opt-in on adversarial review.
 - **[ ] D9** MCP plumbing (`--add-github-mcp-tool`, `--additional-mcp-config`).
 - **[ ] U3** Route `[copilot] ...` progress lines to stderr.
 - **[~] Linux real-host auth verification** — not on the roadmap (maintainer doesn't use Linux).
