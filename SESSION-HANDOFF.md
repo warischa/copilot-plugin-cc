@@ -128,16 +128,41 @@ None.
 - No `CHANGELOG.md` — commit messages and the GitHub Releases page are the changelog.
 - No `npm run publish-release` wrapper (see "Remaining work" below).
 
-## Remaining work
+## Post-`v0.3.0` work shipped in this session
 
-The DESIGN.md §5 menu is **fully shipped** as of the post-0.2.0 publish-release wrapper:
+After cutting `v0.3.0` (publish-release wrapper), this session did a real end-to-end test against Copilot CLI 1.0.52, read the official Copilot docs, and shipped two more releases worth of fixes/divergence-corrections:
 
-- **[x] §5.7b publish-release wrapper.** Shipped this session — `scripts/publish-release.mjs` + `npm run publish-release` + 15 unit tests + `docs/RELEASE.md` "Quick release" section. Chains `bump-version` → `npm test` → `git add` (manifest files only) → `git commit` → `git tag -a` → `git push --follow-tags` → `gh release create`. Flags: `--dry-run`, `--skip-tests`, `--skip-push`, `--skip-gh-release`, `--allow-dirty`, `--branch`, `--remote`. Refuses to start on a dirty tree or off-branch HEAD unless overridden. Pure pieces exported so tests never spawn real `git`/`npm`/`gh`.
+### `v0.3.1` (B1+B2+B3 — bugs surfaced by the real test)
 
-Surfaced-but-deliberately-deferred:
+- **B1:** `getJobKindLabel` used to collapse every non-review jobClass into `"rescue"`. A plain `task` showed up as `| rescue |` in `/copilot:status`. Switch over the full jobClass set; fall back to the class string when unknown. Exported so tests can cover it directly.
+- **B2:** Dropped `"edit"` from `REVIEW_BASELINE_DENY_TOOLS`. Copilot CLI has no such tool — file edits are gated by `write`. The bogus token was silently ignored. Baseline is now `["write", "shell"]`.
+- **B3:** `getCopilotAvailability` returned the raw `copilot --version` output, which on Copilot 1.0.52 trails an "Run 'copilot update'…" advisory line. New `extractVersionLine` helper keeps only the first non-empty line.
 
-- **[~] Linux real-host auth verification** — not on the roadmap (maintainer doesn't use Linux). If a user reports it broken, the fix is one string in `COPILOT_SECRET_SERVICES`. See DESIGN.md §5 optional follow-ups.
-- **[ ] Move repo to a real `Claude-Copilot` GH org** if/when one is created. Identity placeholder is documented in DESIGN.md §2.7 so the transfer is one `gh api -X POST .../transfer` away.
+Also threaded an `isDirectInvocation` guard around `main()` in `copilot-companion.mjs` so tests can import the pure helpers without firing the CLI dispatcher.
+
+### `v0.4.0` (D1+D3+U1+U2 — divergences from documented Copilot behavior)
+
+- **D1:** Expanded `effort` validation from the codex-era `low|medium|high|xhigh` to the full Copilot set `none|low|medium|high|xhigh|max`. Updated the warning message to list the full set.
+- **D3:** New `detectInstructionsFiles` helper probes the documented Copilot custom-instructions paths (global, `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `Copilot.md`, `GEMINI.md`, `CODEX.md`). `/copilot:setup` now lists what's auto-loaded. README documents the precedence rules and links to the Copilot best-practices docs.
+- **U1:** Suppress redundant `Phase: done` line when status is `completed` (and the analogous pairs for `failed`/`cancelled`). New `isRedundantPhase` helper in `lib/render.mjs`.
+- **U2:** New `redactSummary: boolean` plugin-config option. When `true`, stored task summaries show `[summary redacted]` instead of the first ~96 chars of the prompt. Default `false` (no behavior change). Documented in README under "Plugin config" with the privacy rationale.
+
+### Test count
+
+97 (post-`v0.3.0`) → 134 unit tests + 1 skipped integration. All green on Node 22 / macOS. CI will validate Node 20/22 × Linux/macOS/Windows on push.
+
+## Deferred / not in scope this session
+
+- **[ ] D2** Verify `COPILOT_GITHUB_TOKEN` env var actually exists in Copilot CLI. Not in current docs; harmless to keep as an auth probe.
+- **[ ] D4** Document full resume forms (`--resume=<name>`, `--connect=<sessionId>`) in README.
+- **[ ] D5** `/copilot:plan` subcommand using `--mode plan`. Highest-value future feature.
+- **[ ] D6** `--autopilot` + `--max-autopilot-continues` exposure.
+- **[ ] D7** `--share` for review markdown export.
+- **[ ] D8** `--no-custom-instructions` opt-in on adversarial review.
+- **[ ] D9** MCP plumbing (`--add-github-mcp-tool`, `--additional-mcp-config`).
+- **[ ] U3** Route `[copilot] ...` progress lines to stderr.
+- **[~] Linux real-host auth verification** — not on the roadmap (maintainer doesn't use Linux).
+- **[ ] Move repo to real `Claude-Copilot` GH org** — identity placeholder is documented in DESIGN.md §2.7 so the transfer is one `gh api -X POST .../transfer` away.
 
 ## Next steps
 

@@ -86,6 +86,21 @@ describe("loadPluginConfig", () => {
     assert.match(cfg._warnings[0], /effort/);
   });
 
+  it("accepts the full Copilot CLI effort set (none/low/medium/high/xhigh/max)", () => {
+    for (const value of ["none", "low", "medium", "high", "xhigh", "max"]) {
+      const p = writeConfig(`effort-${value}.json`, JSON.stringify({ effort: value }));
+      const cfg = loadPluginConfig({ path: p });
+      assert.equal(cfg.effort, value, `expected ${value} to be accepted`);
+      assert.deepEqual(cfg._warnings, []);
+    }
+  });
+
+  it("invalid-effort warning lists the full accepted set", () => {
+    const p = writeConfig("badEffort2.json", JSON.stringify({ effort: "minimal" }));
+    const cfg = loadPluginConfig({ path: p });
+    assert.match(cfg._warnings[0], /none\|low\|medium\|high\|xhigh\|max/);
+  });
+
   it("warns and ignores empty model", () => {
     const p = writeConfig("emptyModel.json", JSON.stringify({ model: "   " }));
     const cfg = loadPluginConfig({ path: p });
@@ -209,6 +224,25 @@ describe("applyPluginDefaults", () => {
     );
     assert.deepEqual(out.denyTools, ["shell"]);
     assert.deepEqual(out.addDirs, ["/x"]);
+  });
+
+  it("U2: accepts redactSummary boolean and propagates it", () => {
+    const out = applyPluginDefaults({}, { redactSummary: true });
+    assert.equal(out.redactSummary, true);
+  });
+
+  it("U2: warns and ignores non-boolean redactSummary", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "copilot-redact-"));
+    try {
+      const p = path.join(tmp, "bad-redact.json");
+      fs.writeFileSync(p, JSON.stringify({ redactSummary: "yes" }));
+      const cfg = loadPluginConfig({ path: p });
+      assert.equal(cfg.redactSummary, undefined);
+      assert.equal(cfg._warnings.length, 1);
+      assert.match(cfg._warnings[0], /redactSummary/);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it("CLI array wins over config array (whole-array semantics)", () => {

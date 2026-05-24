@@ -10,6 +10,7 @@ import { parseArgs, splitRawArgumentString } from "./lib/args.mjs";
 import {
   buildPersistentTaskSessionName,
   DEFAULT_CONTINUE_PROMPT,
+  detectInstructionsFiles,
   getCopilotAuthStatus,
   getCopilotAvailability,
   runCopilotPrompt
@@ -165,6 +166,7 @@ function buildSetupReport(cwd, actionsTaken = []) {
   const copilotStatus = getCopilotAvailability(cwd);
   const authStatus = getCopilotAuthStatus(cwd);
   const pluginConfig = loadPluginConfig();
+  const instructions = detectInstructionsFiles(cwd);
 
   const nextSteps = [];
   if (!copilotStatus.available) {
@@ -187,6 +189,7 @@ function buildSetupReport(cwd, actionsTaken = []) {
       effort: pluginConfig.effort ?? null,
       warnings: pluginConfig._warnings ?? []
     },
+    instructions,
     actionsTaken,
     nextSteps
   };
@@ -436,8 +439,17 @@ async function executeTaskRun(request) {
   };
 }
 
-function buildTaskRunMetadata({ prompt, resumeLast = false }) {
+// When `redactSummary` is true, the stored job summary is blanked out
+// instead of containing the first ~96 chars of the prompt. Useful for
+// users who paste tokens, secrets, or PII into prompts and don't want
+// them lingering in state/jobs/*.json.
+const REDACTED_SUMMARY = "[summary redacted]";
+
+function buildTaskRunMetadata({ prompt, resumeLast = false, redactSummary = false }) {
   const title = resumeLast ? "Copilot Resume" : "Copilot Task";
+  if (redactSummary) {
+    return { title, summary: REDACTED_SUMMARY };
+  }
   const fallbackSummary = resumeLast ? DEFAULT_CONTINUE_PROMPT : "Task";
   return {
     title,
@@ -768,7 +780,8 @@ async function handleTask(argv) {
     throw new Error("Choose either --resume/--resume-last or --fresh.");
   }
   const write = Boolean(options.write);
-  const taskMetadata = buildTaskRunMetadata({ prompt, resumeLast });
+  const redactSummary = options.redactSummary === true;
+  const taskMetadata = buildTaskRunMetadata({ prompt, resumeLast, redactSummary });
 
   if (options.background) {
     ensureCopilotAvailable(cwd);

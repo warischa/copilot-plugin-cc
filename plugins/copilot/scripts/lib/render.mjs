@@ -1,3 +1,18 @@
+// U1 helper. Status + phase are distinct fields but at terminal states
+// they say the same thing. `completed` jobs always end at phase=done;
+// `failed` / `cancelled` similarly carry no additional information in the
+// phase field. Suppress those duplications in the rendered output.
+const REDUNDANT_PHASE_BY_STATUS = {
+  completed: new Set(["done"]),
+  failed: new Set(["failed", "error", "done"]),
+  cancelled: new Set(["cancelled", "done"])
+};
+
+export function isRedundantPhase(status, phase) {
+  const set = REDUNDANT_PHASE_BY_STATUS[status];
+  return Boolean(set && phase && set.has(phase));
+}
+
 function formatJobLine(job) {
   const parts = [job.id, `${job.status || "unknown"}`];
   if (job.kindLabel) {
@@ -43,7 +58,9 @@ function pushJobDetails(lines, job, options = {}) {
   if (job.summary) {
     lines.push(`  Summary: ${job.summary}`);
   }
-  if (job.phase) {
+  // U1: skip the phase line when it would duplicate the lifecycle status.
+  // A completed job will always have phase=done; printing both is noise.
+  if (job.phase && !isRedundantPhase(job.status, job.phase)) {
     lines.push(`  Phase: ${job.phase}`);
   }
   if (options.showElapsed && job.elapsed) {
@@ -108,6 +125,14 @@ export function renderSetupReport(report) {
       for (const warning of cfg.warnings) {
         lines.push(`  ! ${warning}`);
       }
+    }
+    lines.push("");
+  }
+
+  if (Array.isArray(report.instructions) && report.instructions.length > 0) {
+    lines.push("Copilot custom instructions auto-loaded:");
+    for (const entry of report.instructions) {
+      lines.push(`- [${entry.scope}] ${entry.path}`);
     }
     lines.push("");
   }

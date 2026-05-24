@@ -3,14 +3,40 @@
 // B2 — REVIEW_BASELINE_DENY_TOOLS no longer contains "edit" (Copilot has no such tool).
 // B3 — extractVersionLine strips the "Run 'copilot update'…" advisory line.
 
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import {
   getJobKindLabel,
   REVIEW_BASELINE_DENY_TOOLS
 } from "../plugins/copilot/scripts/copilot-companion.mjs";
-import { extractVersionLine } from "../plugins/copilot/scripts/lib/copilot.mjs";
+import {
+  detectInstructionsFiles,
+  extractVersionLine
+} from "../plugins/copilot/scripts/lib/copilot.mjs";
+
+let workRoot;
+
+before(() => {
+  workRoot = fs.mkdtempSync(path.join(os.tmpdir(), "copilot-helpers-"));
+});
+
+after(() => {
+  fs.rmSync(workRoot, { recursive: true, force: true });
+});
+
+function mkRepo(label) {
+  const root = fs.mkdtempSync(path.join(workRoot, `${label}-`));
+  return root;
+}
+
+function touch(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, "");
+}
 
 describe("B1 getJobKindLabel", () => {
   it("returns the correct label for every known jobClass", () => {
@@ -71,5 +97,66 @@ describe("B3 extractVersionLine", () => {
   it("returns non-string input unchanged", () => {
     assert.equal(extractVersionLine(undefined), undefined);
     assert.equal(extractVersionLine(null), null);
+  });
+});
+
+describe("D3 detectInstructionsFiles", () => {
+  it("returns an empty list when nothing is present", () => {
+    const repo = mkRepo("empty");
+    const fakeHome = mkRepo("home");
+    const found = detectInstructionsFiles(repo, { homedir: fakeHome });
+    assert.deepEqual(found, []);
+  });
+
+  it("detects .github/copilot-instructions.md", () => {
+    const repo = mkRepo("github-md");
+    const fakeHome = mkRepo("home2");
+    touch(path.join(repo, ".github", "copilot-instructions.md"));
+    const found = detectInstructionsFiles(repo, { homedir: fakeHome });
+    assert.equal(found.length, 1);
+    assert.equal(found[0].scope, "repo");
+    assert.ok(found[0].path.endsWith(path.join(".github", "copilot-instructions.md")));
+  });
+
+  it("detects AGENTS.md at the repo root", () => {
+    const repo = mkRepo("agents");
+    const fakeHome = mkRepo("home3");
+    touch(path.join(repo, "AGENTS.md"));
+    const found = detectInstructionsFiles(repo, { homedir: fakeHome });
+    assert.equal(found.length, 1);
+    assert.equal(found[0].scope, "repo");
+  });
+
+  it("detects modular .github/instructions/*.instructions.md files", () => {
+    const repo = mkRepo("modular");
+    const fakeHome = mkRepo("home4");
+    touch(path.join(repo, ".github", "instructions", "frontend.instructions.md"));
+    touch(path.join(repo, ".github", "instructions", "backend.instructions.md"));
+    // A non-matching file in the same dir must be ignored.
+    touch(path.join(repo, ".github", "instructions", "README.md"));
+    const found = detectInstructionsFiles(repo, { homedir: fakeHome });
+    const modular = found.filter((entry) => entry.scope === "repo-modular");
+    assert.equal(modular.length, 2);
+  });
+
+  it("detects ~/.copilot/copilot-instructions.md as global scope", () => {
+    const repo = mkRepo("with-global");
+    const fakeHome = mkRepo("home5");
+    touch(path.join(fakeHome, ".copilot", "copilot-instructions.md"));
+    const found = detectInstructionsFiles(repo, { homedir: fakeHome });
+    assert.equal(found.length, 1);
+    assert.equal(found[0].scope, "global");
+  });
+
+  it("returns multiple entries when several variants coexist", () => {
+    const repo = mkRepo("many");
+    const fakeHome = mkRepo("home6");
+    touch(path.join(repo, "AGENTS.md"));
+    touch(path.join(repo, ".github", "copilot-instructions.md"));
+    touch(path.join(fakeHome, ".copilot", "copilot-instructions.md"));
+    const found = detectInstructionsFiles(repo, { homedir: fakeHome });
+    assert.equal(found.length, 3);
+    const scopes = found.map((entry) => entry.scope).sort();
+    assert.deepEqual(scopes, ["global", "repo", "repo"]);
   });
 });

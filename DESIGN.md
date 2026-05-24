@@ -162,11 +162,34 @@ Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7
 2. **[x] `/copilot:adversarial-review`** — `0d3cd6f`. New prompt template + companion subcommand + slash command. Reuses the regular review's deny-tools + renderer, so review and adversarial-review share one pipeline. **As of 0.2.0** the prompt's attack-surface list is rebalanced toward broader buckets (correctness edge cases, perf, DX) instead of front-loading enterprise framing.
 3. **[x] Liveness sweep for orphan background jobs** — `6cae525`. `lib/job-liveness.mjs` exports `isProcessAlive(pid)` and `sweepDeadJobs(workspaceRoot)`. **As of 0.2.0** the sweep result is surfaced in `/copilot:status` as a one-line `Swept N orphan job(s) (id, ...)` notice, and `sweepDeadJobs` has a `maxRunningAgeMs` option (default 6h) that flips suspected PID-reuse jobs even when the recorded pid still resolves.
 4. **[x] Linux/Windows auth detection** — `2e2d87e` (+ Windows regression `753f163`). Injectable `platform` / `runCommand` / `binaryAvailable` options for cross-platform testability.
-5. **[x] Plugin-level model/effort defaults** — `d9ed30a`. `~/.claude/plugins/copilot/config.json`. **As of 0.2.0** the schema also accepts `denyTools`, `addDirs`, and `defaultPromptFile` (the first two are wired through `applyPluginDefaults`; `defaultPromptFile` is validated but not yet consumed). Reviews always keep the baseline `write,edit,shell` deny list and merge plugin-config additions on top.
+5. **[x] Plugin-level model/effort defaults** — `d9ed30a`. `~/.claude/plugins/copilot/config.json`. **As of 0.2.0** the schema also accepts `denyTools`, `addDirs`, and `defaultPromptFile` (the first two are wired through `applyPluginDefaults`; `defaultPromptFile` is validated but not yet consumed). Reviews always keep the baseline `write,shell` deny list (was `write,edit,shell` — `edit` dropped in 0.3.1 because Copilot has no such tool, see post-port-review below) and merge plugin-config additions on top. **As of 0.4.0** the schema also accepts `redactSummary: boolean` for privacy-conscious users.
 6. **[x] Touched-files summary on `/copilot:rescue`** — `f95b485`. **As of 0.2.0** the inline cap is a 160-char budget + 12-entry hard ceiling (was a fixed count of 5); a pathologically long path always shows at least one entry.
 7. **Marketplace publish + bump-version script.**
    - **[x] `scripts/bump-version.mjs`** — `c786dd0`. Full release flow documented in `docs/RELEASE.md`. Validated end-to-end by cutting `v0.1.1` and `v0.2.0`.
    - **[x] `scripts/publish-release.mjs`** — thin wrapper that chains `bump-version` → `npm test` → `git add` (manifest files only) → `git commit` → `git tag -a` → `git push --follow-tags` → `gh release create`. `--dry-run`, `--skip-tests`, `--skip-push`, `--skip-gh-release`, `--allow-dirty`, `--branch`, `--remote` flags. Pure pieces (`parseArgs`, `buildSteps`, `preflightChecks`, `createRunner`) exported for unit testing — the test suite never spawns real `git` / `npm` / `gh`. Stages exactly the three manifest files (never `git add -A`) and refuses to start on a dirty tree or off-branch HEAD unless explicitly overridden. Closes the §5.7b scope question.
+
+### Post-port review (0.3.1 + 0.4.0)
+
+After running a real end-to-end test against Copilot CLI 1.0.52 and reading the official docs ([getting started](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started), [best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices)), three codex-era assumptions surfaced as real bugs and three Copilot-native features were missed. Shipped:
+
+- **[x] B1 / 0.3.1** — `getJobKindLabel` no longer collapses every non-review jobClass into `"rescue"`. The default branch was a dead codex artifact. Switch over the full set; fall back to the jobClass string when unknown. (Commit on `main` post-`v0.3.0`.)
+- **[x] B2 / 0.3.1** — Dropped `"edit"` from `REVIEW_BASELINE_DENY_TOOLS`. Copilot has no such tool; the token was silently ignored. Baseline is now `["write", "shell"]`.
+- **[x] B3 / 0.3.1** — `getCopilotAvailability` now keeps only the first non-empty line of `copilot --version`, dropping the "Run 'copilot update'…" advisory that recent CLI versions append.
+- **[x] D1 / 0.4.0** — `effort` accepts the full Copilot set (`none|low|medium|high|xhigh|max`), not just the codex-era `low|medium|high|xhigh`.
+- **[x] D3 / 0.4.0** — `detectInstructionsFiles` probes the documented Copilot custom-instructions paths (`~/.copilot/copilot-instructions.md`, `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `Copilot.md`, `GEMINI.md`, `CODEX.md`) and `/copilot:setup` lists what's auto-loaded. Plugin README documents the precedence rules.
+- **[x] U1 / 0.4.0** — Suppress `Phase: done` when status is `completed` (and the analogous redundant pairs for `failed`/`cancelled`). New `isRedundantPhase` helper in `lib/render.mjs`.
+- **[x] U2 / 0.4.0** — New `redactSummary` plugin-config flag. When `true`, stored task summaries show `[summary redacted]` instead of the first ~96 chars of the prompt. Default `false` (no behavior change for existing users); documented in README under "Plugin config" with the privacy rationale.
+
+Deferred items from the same review (see SESSION-HANDOFF):
+
+- **[ ] D2** — Verify whether `COPILOT_GITHUB_TOKEN` env var is real. Not in docs; harmless to keep as a probe.
+- **[ ] D4** — Document the full resume forms (`--resume=<name>`, `--connect=<sessionId>`) in plugin README.
+- **[ ] D5** — `/copilot:plan` subcommand using `--mode plan`. Tracked for 0.5.0.
+- **[ ] D6** — Expose `--autopilot` + `--max-autopilot-continues`. Tracked for 0.5.0+.
+- **[ ] D7** — `--share` option on review for markdown export. Low priority.
+- **[ ] D8** — `--no-custom-instructions` opt-in on `/copilot:adversarial-review` for "fresh eyes" use case. Tracked for 0.5.0.
+- **[ ] D9** — MCP plumbing (`--add-github-mcp-tool`, `--additional-mcp-config`). Tracked for 0.5.0+.
+- **[ ] U3** — Route `[copilot] ...` progress lines to stderr instead of stdout. Low priority.
 
 ### Optional follow-ups — all shipped in 0.2.0
 

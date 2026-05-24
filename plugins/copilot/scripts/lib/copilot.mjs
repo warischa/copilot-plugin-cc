@@ -58,6 +58,60 @@ export function getCopilotAvailability(cwd) {
   };
 }
 
+// Copilot CLI auto-loads custom instructions from a fixed set of paths
+// (see https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices#use-custom-instructions-files).
+// We don't load them ourselves — Copilot does. But the setup report should
+// surface whether any are present so the user knows what the agent will
+// pick up automatically. Detection is best-effort: missing entries are
+// silently omitted; we never error on a probe.
+const INSTRUCTIONS_PROBES = [
+  { rel: ".github/copilot-instructions.md", scope: "repo" },
+  { rel: "AGENTS.md", scope: "repo" },
+  { rel: "Copilot.md", scope: "repo" },
+  { rel: "GEMINI.md", scope: "repo" },
+  { rel: "CODEX.md", scope: "repo" }
+];
+
+export function detectInstructionsFiles(cwd, options = {}) {
+  const exists = options.existsSync ?? fs.existsSync;
+  const home = options.homedir ?? os.homedir();
+  const readdir = options.readdirSync ?? fs.readdirSync;
+  const found = [];
+
+  // 1. Global instructions at ~/.copilot/copilot-instructions.md
+  const globalPath = path.join(home, ".copilot", "copilot-instructions.md");
+  if (exists(globalPath)) {
+    found.push({ path: globalPath, scope: "global" });
+  }
+
+  // 2. Repo-scoped fixed paths
+  for (const probe of INSTRUCTIONS_PROBES) {
+    const abs = path.join(cwd, probe.rel);
+    if (exists(abs)) {
+      found.push({ path: abs, scope: probe.scope });
+    }
+  }
+
+  // 3. Modular per-repo: .github/instructions/*.instructions.md (any file).
+  // We only list the directory if it exists — `readdir` on a missing dir
+  // would throw and we don't want detection to fail.
+  const modularDir = path.join(cwd, ".github", "instructions");
+  if (exists(modularDir)) {
+    try {
+      const entries = readdir(modularDir);
+      for (const name of entries) {
+        if (typeof name === "string" && name.endsWith(".instructions.md")) {
+          found.push({ path: path.join(modularDir, name), scope: "repo-modular" });
+        }
+      }
+    } catch {
+      // Ignore unreadable dirs — best-effort detection.
+    }
+  }
+
+  return found;
+}
+
 // `copilot --version` prints the version on the first line, sometimes
 // followed by an "Run 'copilot update' to check for updates." advisory.
 // Keep only the version line in the setup report.

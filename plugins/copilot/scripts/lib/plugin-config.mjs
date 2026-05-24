@@ -22,7 +22,12 @@ import process from "node:process";
 const ENV_OVERRIDE = "COPILOT_PLUGIN_CONFIG_PATH";
 const DEFAULT_REL_PATH = path.join(".claude", "plugins", "copilot", "config.json");
 
-const VALID_EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
+// Matches `copilot help` output: `--effort, --reasoning-effort <level>`
+// accepts: "none", "low", "medium", "high", "xhigh", "max". The plugin
+// originally hard-coded the codex-era set (low/medium/high/xhigh) and
+// silently rejected the others. Expanded in 0.4.0 to match what Copilot
+// CLI actually advertises.
+const VALID_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
 export function resolvePluginConfigPath(options = {}) {
   const env = options.env ?? process.env;
@@ -88,7 +93,7 @@ export function loadPluginConfig(options = {}) {
       cleaned.effort = effort;
     } else {
       warnings.push(
-        `Plugin config "effort" value "${parsed.effort}" is not one of low|medium|high|xhigh; ignoring.`
+        `Plugin config "effort" value "${parsed.effort}" is not one of none|low|medium|high|xhigh|max; ignoring.`
       );
     }
   }
@@ -113,6 +118,14 @@ export function loadPluginConfig(options = {}) {
       cleaned.defaultPromptFile = promptFile;
     } else {
       warnings.push(`Plugin config "defaultPromptFile" is empty; ignoring.`);
+    }
+  }
+
+  if (parsed.redactSummary != null) {
+    if (typeof parsed.redactSummary === "boolean") {
+      cleaned.redactSummary = parsed.redactSummary;
+    } else {
+      warnings.push(`Plugin config "redactSummary" must be a boolean; ignoring.`);
     }
   }
 
@@ -171,6 +184,9 @@ export function applyPluginDefaults(cliOptions, pluginConfig) {
   }
   if (!Array.isArray(next.addDirs) && Array.isArray(pluginConfig.addDirs)) {
     next.addDirs = [...pluginConfig.addDirs];
+  }
+  if (next.redactSummary == null && typeof pluginConfig.redactSummary === "boolean") {
+    next.redactSummary = pluginConfig.redactSummary;
   }
   // defaultPromptFile is intentionally not merged here. It belongs to a
   // future task-flow that doesn't exist yet; leave the config value
