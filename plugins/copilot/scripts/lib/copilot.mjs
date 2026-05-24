@@ -58,6 +58,17 @@ export function getCopilotAvailability(cwd) {
   };
 }
 
+// Likely Copilot CLI keychain/secret-service identifiers, in order of
+// most-to-least likely. Different Copilot CLI versions have used different
+// keytar service names; probe all of them rather than guessing one.
+const COPILOT_SECRET_SERVICES = [
+  "copilot-cli",
+  "github-copilot-cli",
+  "com.github.copilot.cli",
+  "GitHub Copilot CLI",
+  "Copilot CLI"
+];
+
 function detectEnvAuth(env = process.env) {
   for (const name of AUTH_ENV_VARS) {
     const value = env[name];
@@ -68,27 +79,102 @@ function detectEnvAuth(env = process.env) {
   return null;
 }
 
-function detectMacKeychainAuth() {
-  if (process.platform !== "darwin") {
+function detectMacKeychainAuth(options = {}) {
+  const platform = options.platform ?? process.platform;
+  const run = options.runCommand ?? runCommand;
+  if (platform !== "darwin") {
     return null;
   }
-  const result = runCommand("security", ["find-generic-password", "-s", "copilot-cli"]);
-  if (result.status === 0) {
-    return { source: "keychain" };
+  for (const service of COPILOT_SECRET_SERVICES) {
+    const result = run("security", ["find-generic-password", "-s", service]);
+    if (result.status === 0) {
+      return { source: "keychain", service };
+    }
   }
   return null;
 }
 
-function detectPlaintextAuth() {
-  const home = os.homedir();
+// Parse `secret-tool search` stdout. The binary prints `[/secret/...]`
+// followed by key=value lines when it finds an entry, and exits non-zero
+// (with empty stdout) when it doesn't. We treat any non-empty output as a
+// match so we tolerate format differences across libsecret versions.
+export function parseSecretToolOutput(stdout) {
+  return Boolean(String(stdout ?? "").trim());
+}
+
+function detectLinuxSecretAuth(options = {}) {
+  const platform = options.platform ?? process.platform;
+  const run = options.runCommand ?? runCommand;
+  const probeBinary = options.binaryAvailable ?? binaryAvailable;
+  if (platform !== "linux") {
+    return null;
+  }
+  // libsecret tooling is optional on minimal distros; only probe when
+  // `secret-tool` is actually installed.
+  const tool = probeBinary("secret-tool", ["--version"]);
+  if (!tool.available) {
+    return null;
+  }
+  for (const service of COPILOT_SECRET_SERVICES) {
+    const result = run("secret-tool", ["search", "service", service]);
+    if (result.status === 0 && parseSecretToolOutput(result.stdout)) {
+      return { source: "libsecret", service };
+    }
+  }
+  return null;
+}
+
+// Parse `cmdkey /list` stdout, looking for credentials whose target name
+// hints at Copilot CLI. cmdkey output looks like:
+//   Currently stored credentials:
+//     Target: LegacyGeneric:target=copilot-cli
+//     Type: Generic
+//     User: ...
+export function parseCmdKeyOutput(stdout) {
+  const lines = String(stdout ?? "").split(/\r?\n/);
+  for (const line of lines) {
+    if (/target=.*copilot/i.test(line) || /Target:\s*.*copilot/i.test(line)) {
+      const match = line.match(/target=([^\s]+)/i) || line.match(/Target:\s*(.+)/i);
+      return match ? match[1].trim() : line.trim();
+    }
+  }
+  return null;
+}
+
+function detectWindowsCredentialAuth(options = {}) {
+  const platform = options.platform ?? process.platform;
+  const run = options.runCommand ?? runCommand;
+  const probeBinary = options.binaryAvailable ?? binaryAvailable;
+  if (platform !== "win32") {
+    return null;
+  }
+  const tool = probeBinary("cmdkey", ["/list"]);
+  if (!tool.available) {
+    return null;
+  }
+  const result = run("cmdkey", ["/list"]);
+  if (result.status !== 0) {
+    return null;
+  }
+  const target = parseCmdKeyOutput(result.stdout);
+  if (target) {
+    return { source: "wincred", target };
+  }
+  return null;
+}
+
+function detectPlaintextAuth(options = {}) {
+  const homeDir = options.homedir ?? os.homedir();
+  const existsImpl = options.existsSync ?? fs.existsSync;
+  const statImpl = options.statSync ?? fs.statSync;
   const candidates = [
-    path.join(home, ".copilot", "auth.json"),
-    path.join(home, ".copilot", "credentials.json")
+    path.join(homeDir, ".copilot", "auth.json"),
+    path.join(homeDir, ".copilot", "credentials.json")
   ];
   for (const filePath of candidates) {
-    if (fs.existsSync(filePath)) {
+    if (existsImpl(filePath)) {
       try {
-        const stat = fs.statSync(filePath);
+        const stat = statImpl(filePath);
         if (stat.size > 0) {
           return { source: "plaintext", file: filePath };
         }
@@ -121,17 +207,46 @@ export function getCopilotAuthStatus(cwd, options = {}) {
     };
   }
 
-  const keychainAuth = detectMacKeychainAuth();
+  const probeOptions = {
+    platform: options.platform,
+    runCommand: options.runCommand,
+    binaryAvailable: options.binaryAvailable,
+    homedir: options.homedir,
+    existsSync: options.existsSync,
+    statSync: options.statSync
+  };
+
+  const keychainAuth = detectMacKeychainAuth(probeOptions);
   if (keychainAuth) {
     return {
       available: true,
       loggedIn: true,
-      detail: "Authenticated via macOS keychain (copilot-cli)",
+      detail: `Authenticated via macOS keychain (${keychainAuth.service})`,
       source: keychainAuth.source
     };
   }
 
-  const plaintextAuth = detectPlaintextAuth();
+  const libsecretAuth = detectLinuxSecretAuth(probeOptions);
+  if (libsecretAuth) {
+    return {
+      available: true,
+      loggedIn: true,
+      detail: `Authenticated via libsecret (${libsecretAuth.service})`,
+      source: libsecretAuth.source
+    };
+  }
+
+  const winCredAuth = detectWindowsCredentialAuth(probeOptions);
+  if (winCredAuth) {
+    return {
+      available: true,
+      loggedIn: true,
+      detail: `Authenticated via Windows Credential Manager (${winCredAuth.target})`,
+      source: winCredAuth.source
+    };
+  }
+
+  const plaintextAuth = detectPlaintextAuth(probeOptions);
   if (plaintextAuth) {
     return {
       available: true,
@@ -144,7 +259,8 @@ export function getCopilotAuthStatus(cwd, options = {}) {
   return {
     available: true,
     loggedIn: false,
-    detail: "Not authenticated. Run `!copilot login` or set COPILOT_GITHUB_TOKEN / GH_TOKEN / GITHUB_TOKEN.",
+    detail:
+      "Not authenticated. Run `!copilot login` (stores credentials in the OS keyring on macOS/Linux/Windows or as a plaintext file as a fallback), or set COPILOT_GITHUB_TOKEN / GH_TOKEN / GITHUB_TOKEN.",
     source: "unknown"
   };
 }
