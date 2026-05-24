@@ -156,7 +156,7 @@ These are **not bugs** — they were scoped out. Pick up here if extending.
 
 ## 5. Next-step menu
 
-Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7b (publish-release wrapper, shipped in 0.3.0-dev). Every "Optional follow-up" then shipped in 0.2.0.
+Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7b (publish-release wrapper, shipped in 0.3.0). Every "Optional follow-up" then shipped in 0.2.0. The post-port review buckets (B1–B3 in 0.3.1, D1+D3+U1+U2 in 0.4.0, D5+D6+D8 in 0.5.0) are documented below.
 
 1. **[x] Integration smoke test against the real `copilot` binary** — `f556d9d`. `tests/integration.test.mjs` spawns the companion with a 1-line prompt, asserts the JSONL parse path captures the final answer, and verifies `result.sessionId` persists to the stored job file. **As of 0.2.0** opt-in via `COPILOT_INTEGRATION=1` instead of auto-running.
 2. **[x] `/copilot:adversarial-review`** — `0d3cd6f`. New prompt template + companion subcommand + slash command. Reuses the regular review's deny-tools + renderer, so review and adversarial-review share one pipeline. **As of 0.2.0** the prompt's attack-surface list is rebalanced toward broader buckets (correctness edge cases, perf, DX) instead of front-loading enterprise framing.

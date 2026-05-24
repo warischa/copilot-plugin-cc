@@ -1,10 +1,17 @@
-# Session handoff — 2026-05-24 (post-v1 extensions)
+# Session handoff — 2026-05-24 (through `v0.5.0`)
 
 ## Current task and status
 
-**Status:** Done. v1 MVP shipped as `0.1.0`, then `0.1.1` rolled up §5 items 1–6 + bump-version, and `0.2.0` rolled up every optional follow-up, dropped Node 18, and added a real CI workflow. The repo is **public** at https://github.com/warischa/copilot-plugin-cc with branch protection on `main`. Working tree is clean, all 97 tests pass (1 skipped — integration is now opt-in), and version metadata is in sync at `0.2.0`.
+**Status:** Done. The session shipped **four** releases on top of the original v0.2.0 line:
 
-Last action: documented the `Claude-Copilot` placeholder identity as an intentional design choice in DESIGN.md §2.7 (commit subject `Document Claude-Copilot identity as an intentional placeholder`).
+- `v0.3.0` — publish-release wrapper (DESIGN §5.7b closed).
+- `v0.3.1` — bugs surfaced by a real end-to-end test (B1+B2+B3): label collapse, `edit` deny-tool, version-line trim.
+- `v0.4.0` — divergences from documented Copilot behavior (D1+D3+U1+U2): effort set expanded, custom-instructions detected, redundant phase line, `redactSummary` privacy flag.
+- `v0.5.0` — agentic upgrade (D5+D6+D8): new `/copilot:plan` command, `--autopilot` on tasks, `--no-custom-instructions` on adversarial review.
+
+The repo is public at https://github.com/warischa/copilot-plugin-cc with branch protection on `main`. Working tree is clean, **140 tests pass + 1 skipped** (integration is opt-in via `COPILOT_INTEGRATION=1`), and version metadata is in sync at **`0.5.0`**.
+
+Last action: shipped `v0.5.0` end-to-end via the `publish-release` wrapper (commit `060a5de`, tag `v0.5.0`, GitHub Release created).
 
 ## Goal
 
@@ -121,12 +128,17 @@ None.
 - New render coverage: `renderStatusReport` sweep-line cases (4 tests)
 - Extended job-liveness coverage: age-threshold + PID-reuse mitigation (4 tests)
 
-**Not done (deliberate / future):**
+**Not done (deliberate / future) — as of v0.2.0:**
 
-- No Linux real-host auth verification (probe list is best-effort; see Assumptions).
-- No end-to-end test of `/copilot:adversarial-review` against the real binary — it shares `runCopilotPrompt` with `review`, so the integration test covers the underlying path.
-- No `CHANGELOG.md` — commit messages and the GitHub Releases page are the changelog.
-- No `npm run publish-release` wrapper (see "Remaining work" below).
+- No Linux real-host auth verification (probe list is best-effort; see Assumptions). **Still deferred.**
+- No end-to-end test of `/copilot:adversarial-review` against the real binary — it shares `runCopilotPrompt` with `review`, so the integration test covers the underlying path. **Still true.**
+- No `CHANGELOG.md` — commit messages and the GitHub Releases page are the changelog. **Still true.**
+- No `npm run publish-release` wrapper. **Shipped in v0.3.0** — see commit `755998b`.
+
+**Added in v0.5.0:**
+
+- Smoke-tested `/copilot:plan` end-to-end against the real binary (32s round-trip on a short prompt).
+- Unit-test coverage extended to `buildCopilotArgs` (plan / autopilot / no-custom-instructions combinations).
 
 ## Post-`v0.3.0` work shipped in this session
 
@@ -175,16 +187,18 @@ All flags flow through one place — `buildCopilotArgs` in `lib/copilot.mjs` —
 
 For the next Claude Code session, in order:
 
-1. Skim `DESIGN.md` (§2 decisions, §4 gotchas, §5 status). It's the authoritative state-of-the-plugin doc — the SESSION-HANDOFF.md you're reading is the timeline, DESIGN.md is the contract.
-2. If the user asks to cut a release: follow `docs/RELEASE.md`. Run `npm run version:check`, then `npm run bump-version -- <new>`, then commit + tag + push.
-3. If the user asks to extend further: pick from DESIGN.md §5 "Optional follow-ups". Each item names the files to touch.
-4. If `copilot` CLI changes: re-probe with `copilot -p "ping" --output-format json --allow-all-tools --no-color` and diff against `describeEvent()` in `lib/copilot.mjs`. The pure extractors (`extractTouchedFilePath`, `parseCmdKeyOutput`, `parseSecretToolOutput`) are exported specifically to make this kind of drift catch-able with one test.
-5. **Always cross-reference** the codex-plugin-cc reference at `https://github.com/openai/codex-plugin-cc` before designing a new feature. Most patterns already exist there. A shallow clone is in `/tmp/codex-plugin-cc-ref/` during this session — that's ephemeral; re-clone if you need it.
+1. Skim `DESIGN.md` (§2 decisions, §4 gotchas, §5 status — including the **Post-port review** and **Agentic upgrade** subsections). It's the authoritative state-of-the-plugin doc — the SESSION-HANDOFF.md you're reading is the timeline, DESIGN.md is the contract.
+2. If the user asks to cut a release: run `npm run publish-release -- <new>` (one command — see `docs/RELEASE.md`). The wrapper handles bump-version + tests + commit + tag + push + GH release.
+3. If the user asks to extend further: pick from the **Deferred items** in DESIGN.md §5 (D7 `--share`, D9 MCP plumbing, U3 progress→stderr, D2/D4 docs/cleanup) or invent a new bucket.
+4. If `copilot` CLI changes: re-probe with `copilot -p "ping" --output-format json --allow-all-tools --no-color` and diff against `describeEvent()` in `lib/copilot.mjs`. The pure extractors (`extractTouchedFilePath`, `extractVersionLine`, `parseCmdKeyOutput`, `parseSecretToolOutput`, `detectInstructionsFiles`, `buildCopilotArgs`) are exported specifically to make this kind of drift catch-able with one test.
+5. **Cross-reference both** the codex-plugin-cc reference at `https://github.com/openai/codex-plugin-cc` AND the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices)) before designing a new feature. The codex pattern is the shape; Copilot's actual flags are the ground truth — and they don't always agree (see §5 Post-port review).
 
 ## Important context
 
-- This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns. CLAUDE.md's "Conceptual source" section spells this out.
-- The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account). This is **a resolved decision**, not a TODO — see [DESIGN.md §2.7 "Project identity"](DESIGN.md) for the rationale. The plan is: if a real `Claude-Copilot` GH org appears later, transfer the repo and the manifest identity keeps working untouched.
-- Commits on `main` so far (newest first): `c2bb7b8` (identity doc), `86e1a02` (Release 0.2.0), `fb9f5fb`, `912c8f1`, `a9be2a5`, `c5303bc`, `2074121`, `028aa6e` (Release 0.1.1), `2ba6885`, `c786dd0`, `f95b485`, `d9ed30a`, `753f163`, `2e2d87e`, `6cae525`, `0d3cd6f`, `f556d9d`, `d7e73bb` (initial). Tags: `v0.1.1`, `v0.2.0`.
+- This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns, **but** the post-port review in 0.3.1/0.4.0/0.5.0 demonstrated that codex-era assumptions can mask real bugs. Always cross-check against the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices), [getting started](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started)) when porting a new feature.
+- The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account). See [DESIGN.md §2.7 "Project identity"](DESIGN.md).
+- **Tags shipped:** `v0.1.1`, `v0.2.0`, `v0.3.0`, `v0.3.1`, `v0.4.0`, `v0.5.0`. Latest tag = latest release.
+- **Recent commits (newest first):** `060a5de` (Release 0.5.0), `d86a304` (D5+D6+D8), `e7e5bab` (Release 0.4.0), `aa1a7ad` (D1+D3+U1+U2), `2a9b85b` (Release 0.3.1), `ba39cd5` (B1+B2+B3), `1b7b64a` (Release 0.3.0), `755998b` (publish-release wrapper).
 - Branch `main` is protected — no force-push, no deletion, linear history only. Routine commits and pushes are fine.
+- **Release workflow:** Single command — `npm run publish-release -- <version>`. Refuses on dirty tree or off-branch HEAD unless `--allow-dirty` / `--branch` is passed. See `docs/RELEASE.md`.
 - The `code-review-graph` build hook may regenerate `.code-review-graph/` at the repo root — it's in `.gitignore`.
