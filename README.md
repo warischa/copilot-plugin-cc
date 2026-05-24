@@ -181,11 +181,21 @@ npm test
 
 Runs `node --test tests/*.test.mjs`.
 
+## Releasing
+
+Use the bump-version script to keep `package.json`, the plugin manifest, and the marketplace manifest in sync. The full workflow — picking a semver bump, running the script, tagging, pushing — is documented in [docs/RELEASE.md](./docs/RELEASE.md).
+
+Quick reference:
+
+```bash
+npm run version:check          # verify manifests are aligned with package.json
+npm run bump-version -- 0.2.0  # bump every manifest to 0.2.0
+```
+
 ## Differences from `codex-plugin-cc`
 
 | Codex plugin | This plugin |
 |---|---|
-| `/codex:adversarial-review` | not in v1 — use `/copilot:review` |
 | Stop-time review gate | not in v1 |
 | Codex app server (JSON-RPC) | direct `copilot -p ... --output-format json` JSONL stream |
 | Built-in structured review schema | verbatim prose review |
