@@ -32,6 +32,7 @@ import {
   resolveResultJob,
   sortJobsNewestFirst
 } from "./lib/job-control.mjs";
+import { sweepDeadJobs } from "./lib/job-liveness.mjs";
 import {
   appendLogLine,
   createJobLogFile,
@@ -776,6 +777,18 @@ async function handleStatus(argv) {
   });
 
   const cwd = resolveCommandCwd(options);
+
+  // Sweep any orphan "running" jobs whose worker processes have died.
+  // This must happen before snapshots are built so /copilot:status never
+  // shows a zombie record.
+  try {
+    sweepDeadJobs(resolveWorkspaceRoot(cwd));
+  } catch {
+    // Sweeping is best-effort. If state is corrupt or the workspace root
+    // can't be resolved, fall through to the normal status flow rather
+    // than failing the command.
+  }
+
   const reference = positionals[0] ?? "";
   if (reference) {
     const snapshot = options.wait
