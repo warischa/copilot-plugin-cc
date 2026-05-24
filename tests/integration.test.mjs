@@ -122,6 +122,18 @@ describe("integration: real copilot via companion", () => {
         `expected threadId (sessionId) to be captured. payload=${JSON.stringify(payload)}`
       );
 
+      // touchedFiles is always present, even if empty, so consumers can
+      // rely on the shape without conditionals.
+      assert.ok(
+        Array.isArray(payload.touchedFiles),
+        `expected touchedFiles to be an array. payload=${JSON.stringify(payload)}`
+      );
+      assert.equal(
+        payload.touchedFiles.length,
+        0,
+        `expected no files touched for a 'hello' prompt. got=${JSON.stringify(payload.touchedFiles)}`
+      );
+
       // And it must have been persisted to the stored job file.
       const stateDir = findStateDir();
       assert.ok(stateDir, `expected a workspace state dir under ${tempDir}/state`);

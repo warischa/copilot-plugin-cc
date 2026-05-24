@@ -155,14 +155,35 @@ export function renderReviewResult(result, meta) {
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
+// Cap the inline file listing so the summary stays one line. Anything
+// beyond MAX_INLINE_FILES collapses to "...and N more".
+const MAX_INLINE_FILES = 5;
+
+export function renderTouchedFilesSummary(touchedFiles) {
+  if (!Array.isArray(touchedFiles) || touchedFiles.length === 0) {
+    return null;
+  }
+  const total = touchedFiles.length;
+  const shown = touchedFiles.slice(0, MAX_INLINE_FILES);
+  const overflow = total - shown.length;
+  const suffix = overflow > 0 ? `, ...and ${overflow} more` : "";
+  const noun = total === 1 ? "file" : "files";
+  return `Touched ${total} ${noun}: ${shown.join(", ")}${suffix}`;
+}
+
 export function renderTaskResult(parsedResult) {
   const rawOutput = typeof parsedResult?.rawOutput === "string" ? parsedResult.rawOutput : "";
+  const touchedFiles = Array.isArray(parsedResult?.touchedFiles) ? parsedResult.touchedFiles : [];
+  const summaryLine = renderTouchedFilesSummary(touchedFiles);
+  const header = summaryLine ? `${summaryLine}\n\n` : "";
+
   if (rawOutput) {
-    return rawOutput.endsWith("\n") ? rawOutput : `${rawOutput}\n`;
+    const trimmed = rawOutput.endsWith("\n") ? rawOutput : `${rawOutput}\n`;
+    return `${header}${trimmed}`;
   }
 
   const message = String(parsedResult?.failureMessage ?? "").trim() || "Copilot did not return a final message.";
-  return `${message}\n`;
+  return `${header}${message}\n`;
 }
 
 export function renderStatusReport(report) {

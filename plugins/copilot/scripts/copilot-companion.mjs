@@ -385,11 +385,13 @@ async function executeTaskRun(request) {
 
   const rawOutput = typeof result.finalMessage === "string" ? result.finalMessage : "";
   const failureMessage = result.stderr ?? "";
-  const rendered = renderTaskResult({ rawOutput, failureMessage });
+  const touchedFiles = Array.isArray(result.touchedFiles) ? result.touchedFiles : [];
+  const rendered = renderTaskResult({ rawOutput, failureMessage, touchedFiles });
   const payload = {
     status: result.status,
     threadId: result.threadId,
-    rawOutput
+    rawOutput,
+    touchedFiles
   };
 
   return {

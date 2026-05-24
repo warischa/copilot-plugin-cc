@@ -377,6 +377,25 @@ function captureFinalAnswer(state, event) {
   }
 }
 
+/**
+ * Pure extractor: given a single Copilot JSONL event, return the file
+ * path it touched, or null if the event is not a file change.
+ *
+ * Exported so tests can pin the exact shape we expect from Copilot's
+ * `file.change` events. If a future Copilot version renames the field
+ * or wraps the path, this is the one place to update.
+ */
+export function extractTouchedFilePath(event) {
+  if (!event || event.type !== "file.change") {
+    return null;
+  }
+  const candidate =
+    typeof event.data?.path === "string" && event.data.path.trim()
+      ? event.data.path.trim()
+      : null;
+  return candidate;
+}
+
 function buildCopilotArgs(options) {
   const args = [];
 
@@ -480,7 +499,10 @@ export function runCopilotPrompt(cwd, options = {}) {
       resultExitCode: null,
       stderrBuffer: "",
       stdoutBuffer: "",
-      cancelled: false
+      cancelled: false,
+      // Preserve insertion order of distinct file paths so the rendered
+      // summary lists files in the order Copilot actually touched them.
+      touchedFiles: new Set()
     };
 
     if (options.signal && typeof options.signal.addEventListener === "function") {
@@ -501,6 +523,10 @@ export function runCopilotPrompt(cwd, options = {}) {
       state.stdoutBuffer += chunk;
       state.stdoutBuffer = parseJsonlChunk(state.stdoutBuffer, (event) => {
         captureFinalAnswer(state, event);
+        const touched = extractTouchedFilePath(event);
+        if (touched) {
+          state.touchedFiles.add(touched);
+        }
         const description = describeEvent(event);
         if (description) {
           const extra = {};
@@ -530,6 +556,10 @@ export function runCopilotPrompt(cwd, options = {}) {
         try {
           const event = JSON.parse(tail);
           captureFinalAnswer(state, event);
+          const tailTouched = extractTouchedFilePath(event);
+          if (tailTouched) {
+            state.touchedFiles.add(tailTouched);
+          }
         } catch {
           // ignore
         }
@@ -543,7 +573,8 @@ export function runCopilotPrompt(cwd, options = {}) {
         threadId: state.sessionId,
         turnId: state.turnId,
         finalMessage: state.lastFinalAnswer,
-        stderr: state.stderrBuffer
+        stderr: state.stderrBuffer,
+        touchedFiles: [...state.touchedFiles]
       });
     });
   });
