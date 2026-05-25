@@ -1,17 +1,81 @@
-# Session handoff — 2026-05-24 (through `v0.5.0`)
+# Session handoff — 2026-05-25 (through `v0.6.0`)
 
 ## Current task and status
 
-**Status:** Done. The session shipped **four** releases on top of the original v0.2.0 line:
+**Status:** Done. The 0.6.0 session closed every remaining item on the post-port menu (DESIGN.md §5) in one batch:
+
+- `v0.6.0` — menu completion (D2+D4+D7+D9+U3): `COPILOT_GITHUB_TOKEN` citation, full resume-forms doc, `--share` / `--share-path` / `--share-gist` pass-through on all four agent commands, `--mcp-tool` / `--mcp-config` pass-through on rescue+plan, U3 confirmed already-done.
+
+Working tree was clean on `main` at v0.5.0 (commit `3642c9f`) before the session started. **156 tests pass + 1 skipped** (was 141 → +15 new tests for D7, D9, and the `parseCommaSeparatedList` helper). Integration test is still opt-in via `COPILOT_INTEGRATION=1`.
+
+Last actions:
+1. Verified every newly-claimed Copilot flag against `copilot --help` and `copilot help environment` on Copilot CLI 1.0.52 — found `COPILOT_GITHUB_TOKEN`, `--resume[=value]`, `--connect[=sessionId]`, `--continue`, `--session-id`, `--share[=path]`, `--share-gist`, `--add-github-mcp-tool`, `--additional-mcp-config` all documented exactly as we use them.
+2. Real end-to-end smoke test against the live binary: `node ...companion.mjs task --share-path /tmp/copilot-smoke-0.6.0.md --mcp-tool issues "Reply with the single word OK"` returned `OK`, exit 0, and the markdown transcript landed at the requested path. Both new feature buckets verified end-to-end.
+
+## Previous session handoff — 2026-05-24 (through `v0.5.0`)
+
+The 0.5.0 session shipped **four** releases on top of the original v0.2.0 line:
 
 - `v0.3.0` — publish-release wrapper (DESIGN §5.7b closed).
 - `v0.3.1` — bugs surfaced by a real end-to-end test (B1+B2+B3): label collapse, `edit` deny-tool, version-line trim.
 - `v0.4.0` — divergences from documented Copilot behavior (D1+D3+U1+U2): effort set expanded, custom-instructions detected, redundant phase line, `redactSummary` privacy flag.
 - `v0.5.0` — agentic upgrade (D5+D6+D8): new `/copilot:plan` command, `--autopilot` on tasks, `--no-custom-instructions` on adversarial review.
 
-The repo is public at https://github.com/warischa/copilot-plugin-cc with branch protection on `main`. Working tree is clean, **140 tests pass + 1 skipped** (integration is opt-in via `COPILOT_INTEGRATION=1`), and version metadata is in sync at **`0.5.0`**.
+The repo is public at https://github.com/warischa/copilot-plugin-cc with branch protection on `main`. After 0.5.0 the working tree was clean with **140 tests pass + 1 skipped** at version `0.5.0` (commit `060a5de`, tag `v0.5.0`).
 
-Last action: shipped `v0.5.0` end-to-end via the `publish-release` wrapper (commit `060a5de`, tag `v0.5.0`, GitHub Release created).
+## What this 0.6.0 session shipped
+
+Five buckets, one release. Worth noting up front: every Copilot flag we added in this session was **verified against `copilot help`** before any code landed — the post-port-review lesson from 0.3.1/0.4.0 (codex-era assumptions can hide real bugs) is now standard practice.
+
+### D2 — `COPILOT_GITHUB_TOKEN` citation
+
+`copilot help environment` documents `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` in that precedence order. Added a comment on `AUTH_ENV_VARS` in `lib/copilot.mjs` so the next reader doesn't re-litigate whether the first var is real. No behavior change.
+
+### D4 — Resume forms documented in README
+
+Copilot supports four resume mechanisms; only one is used by the plugin (`--resume=<sessionId>`). The README now has a "Resume forms" table covering `--resume[=value]` (id / id-prefix / task id / case-insensitive name), `--continue`, `--connect[=sessionId]` (remote handoff), and `--session-id <uuid>`. Power users now know what they can do directly from the bare `copilot` CLI after the plugin prints a session id.
+
+### D7 — `--share` / `--share-path` / `--share-gist` pass-through
+
+Surfaced on **all four** agent-facing commands: `/copilot:review`, `/copilot:adversarial-review`, `/copilot:rescue`, and `/copilot:plan`. The bare `--share` uses Copilot's default `./copilot-session-<id>.md`. `--share-path <path>` overrides and implies `--share` — `buildCopilotArgs` suppresses the bare `--share` when a path is set to avoid double-emission. `--share-gist` uploads to a secret GitHub gist, independent of the other two flags. The file write happens *after* the run, so reviews keep their read-only contract while Copilot is working — the markdown file is the only side effect, and only on opt-in.
+
+### D9 — MCP pass-through (rescue + plan only)
+
+Two new flags on `/copilot:rescue` and `/copilot:plan` only:
+
+- `--mcp-tool <names>` accepts a comma-separated list; each entry becomes one `--add-github-mcp-tool <name>` to Copilot. Dedupes preserving first-seen order.
+- `--mcp-config <json|@path>` accepts a single JSON string or `@file` path; emitted as `--additional-mcp-config`.
+
+**Reviews and adversarial-reviews intentionally do not accept these.** MCP servers can expose tools that write or shell out — that would break the read-only invariant enforced by `REVIEW_BASELINE_DENY_TOOLS`. If a user wants extra MCP context for a review, they need a different code path (not in scope).
+
+A new `parseCommaSeparatedList` helper in `copilot-companion.mjs` does the comma split; it's exported and unit-tested. It deliberately does NOT split on whitespace or accept JSON arrays — comma is the documented form, and JSON config strings themselves contain commas (use `--mcp-config` for those).
+
+### U3 — `[copilot] ...` lines to stderr
+
+Verified during the sweep: both `[copilot] ...` writers (`createProgressReporter` in `tracked-jobs.mjs:126`, `reportPluginConfigWarnings` in `plugin-config.mjs:210`) already write to `process.stderr`. No code change needed; DESIGN.md §5 marker flipped from `[ ]` to `[x] / 0.6.0` with a note.
+
+### End-to-end smoke test against Copilot CLI 1.0.52
+
+Burned one real Copilot API call to verify the two non-trivial buckets end-to-end:
+
+```bash
+node plugins/copilot/scripts/copilot-companion.mjs task \
+  --share-path /tmp/copilot-smoke-0.6.0.md \
+  --mcp-tool issues \
+  "Reply with the single word OK and nothing else."
+```
+
+Result: `OK`, exit 0, and `/tmp/copilot-smoke-0.6.0.md` (437B) contained the expected markdown transcript with session id + prompt + reply. `--mcp-tool issues` was accepted (Copilot errors on invalid MCP tool names). Both new feature paths confirmed live before tagging.
+
+### Test count delta
+
+141 (pre-session) → **156** (post-session). 15 new tests in `companion-helpers.test.mjs`:
+
+- **6 for D7** — bare `--share`, `--share-path` implies share and suppresses bare, path-alone form, `--share-gist` independent, blank-path ignored, default emits nothing.
+- **4 for D9** — `--add-github-mcp-tool` repeats per entry, `--additional-mcp-config` repeats per entry, blank/null entries skipped, default emits nothing.
+- **5 for `parseCommaSeparatedList`** — null/empty handling, trim+split, dedupe preserving order, doubled/trailing commas, array flattening.
+
+All green locally on Node 22 / macOS. CI will validate Node 20/22 × Linux/macOS/Windows on push.
 
 ## Goal
 
@@ -175,30 +239,28 @@ All flags flow through one place — `buildCopilotArgs` in `lib/copilot.mjs` —
 
 ## Deferred / not in scope this session
 
-- **[ ] D2** Verify `COPILOT_GITHUB_TOKEN` env var actually exists in Copilot CLI. Not in current docs; harmless to keep as an auth probe.
-- **[ ] D4** Document full resume forms (`--resume=<name>`, `--connect=<sessionId>`) in README.
-- **[ ] D7** `--share` for review markdown export.
-- **[ ] D9** MCP plumbing (`--add-github-mcp-tool`, `--additional-mcp-config`).
-- **[ ] U3** Route `[copilot] ...` progress lines to stderr.
-- **[~] Linux real-host auth verification** — not on the roadmap (maintainer doesn't use Linux).
+The post-port menu (D-/U- items) is **fully closed as of 0.6.0**. What's still on the table:
+
+- **[~] Linux real-host auth verification** — probe list is best-effort; not on the roadmap (maintainer doesn't use Linux). One-string fix in `COPILOT_SECRET_SERVICES` if a user reports breakage.
 - **[ ] Move repo to real `Claude-Copilot` GH org** — identity placeholder is documented in DESIGN.md §2.7 so the transfer is one `gh api -X POST .../transfer` away.
+- **[ ] New Copilot CLI flags** — Copilot ships flags faster than we port them. The companion's `buildCopilotArgs` is the single place to extend; re-probe `copilot --help` whenever the binary updates.
 
 ## Next steps
 
 For the next Claude Code session, in order:
 
-1. Skim `DESIGN.md` (§2 decisions, §4 gotchas, §5 status — including the **Post-port review** and **Agentic upgrade** subsections). It's the authoritative state-of-the-plugin doc — the SESSION-HANDOFF.md you're reading is the timeline, DESIGN.md is the contract.
+1. Skim `DESIGN.md` (§2 decisions, §4 gotchas, §5 status — including **Post-port review**, **Agentic upgrade**, and **Menu completion (0.6.0)** subsections). It's the authoritative state-of-the-plugin doc — this SESSION-HANDOFF.md is the timeline, DESIGN.md is the contract.
 2. If the user asks to cut a release: run `npm run publish-release -- <new>` (one command — see `docs/RELEASE.md`). The wrapper handles bump-version + tests + commit + tag + push + GH release.
-3. If the user asks to extend further: pick from the **Deferred items** in DESIGN.md §5 (D7 `--share`, D9 MCP plumbing, U3 progress→stderr, D2/D4 docs/cleanup) or invent a new bucket.
-4. If `copilot` CLI changes: re-probe with `copilot -p "ping" --output-format json --allow-all-tools --no-color` and diff against `describeEvent()` in `lib/copilot.mjs`. The pure extractors (`extractTouchedFilePath`, `extractVersionLine`, `parseCmdKeyOutput`, `parseSecretToolOutput`, `detectInstructionsFiles`, `buildCopilotArgs`) are exported specifically to make this kind of drift catch-able with one test.
+3. If the user asks to extend further: the post-port menu is empty. Likely sources of new work are (a) Copilot CLI shipped a new flag we haven't ported (re-probe `copilot --help`), (b) a real user reported a bug, (c) the user wants a new feature bucket invented from scratch. There's no "obvious next" item to pull off the shelf.
+4. If `copilot` CLI changes: re-probe with `copilot -p "ping" --output-format json --allow-all-tools --no-color` and diff against `describeEvent()` in `lib/copilot.mjs`. The pure extractors (`extractTouchedFilePath`, `extractVersionLine`, `parseCmdKeyOutput`, `parseSecretToolOutput`, `detectInstructionsFiles`, `buildCopilotArgs`, `parseCommaSeparatedList`) are exported specifically to make this kind of drift catch-able with one test.
 5. **Cross-reference both** the codex-plugin-cc reference at `https://github.com/openai/codex-plugin-cc` AND the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices)) before designing a new feature. The codex pattern is the shape; Copilot's actual flags are the ground truth — and they don't always agree (see §5 Post-port review).
 
 ## Important context
 
-- This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns, **but** the post-port review in 0.3.1/0.4.0/0.5.0 demonstrated that codex-era assumptions can mask real bugs. Always cross-check against the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices), [getting started](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started)) when porting a new feature.
+- This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns, **but** the post-port review in 0.3.1/0.4.0/0.5.0/0.6.0 demonstrated that codex-era assumptions can mask real bugs. Always cross-check against the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices), [getting started](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started)) when porting a new feature. `copilot help <topic>` (especially `environment` and `permissions`) is the actual ground truth — the web docs lag.
 - The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account). See [DESIGN.md §2.7 "Project identity"](DESIGN.md).
-- **Tags shipped:** `v0.1.1`, `v0.2.0`, `v0.3.0`, `v0.3.1`, `v0.4.0`, `v0.5.0`. Latest tag = latest release.
-- **Recent commits (newest first):** `060a5de` (Release 0.5.0), `d86a304` (D5+D6+D8), `e7e5bab` (Release 0.4.0), `aa1a7ad` (D1+D3+U1+U2), `2a9b85b` (Release 0.3.1), `ba39cd5` (B1+B2+B3), `1b7b64a` (Release 0.3.0), `755998b` (publish-release wrapper).
+- **Tags shipped:** `v0.1.1`, `v0.2.0`, `v0.3.0`, `v0.3.1`, `v0.4.0`, `v0.5.0`, `v0.6.0`. Latest tag = latest release.
+- **Recent commits (newest first, pre-0.6.0):** `3642c9f` (Refresh SESSION-HANDOFF and DESIGN through v0.5.0), `060a5de` (Release 0.5.0), `d86a304` (D5+D6+D8), `e7e5bab` (Release 0.4.0), `aa1a7ad` (D1+D3+U1+U2), `2a9b85b` (Release 0.3.1), `ba39cd5` (B1+B2+B3), `1b7b64a` (Release 0.3.0).
 - Branch `main` is protected — no force-push, no deletion, linear history only. Routine commits and pushes are fine.
 - **Release workflow:** Single command — `npm run publish-release -- <version>`. Refuses on dirty tree or off-branch HEAD unless `--allow-dirty` / `--branch` is passed. See `docs/RELEASE.md`.
 - The `code-review-graph` build hook may regenerate `.code-review-graph/` at the repo root — it's in `.gitignore`.

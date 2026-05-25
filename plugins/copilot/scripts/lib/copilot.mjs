@@ -10,6 +10,13 @@ export const DEFAULT_CONTINUE_PROMPT =
   "Continue from the current session state. Pick the next highest-value step and follow through until the task is resolved.";
 
 const COPILOT_BIN = "copilot";
+// Auth env vars in Copilot's documented precedence order. Source of truth:
+// `copilot help environment` (verified against Copilot CLI 1.0.52 in 0.6.0):
+//   `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` (in order of precedence):
+//   an authentication token that takes precedence over previously stored
+//   credentials.
+// Keep this list in this exact order if you ever edit it — Copilot consults
+// them in this order before falling back to keychain/libsecret/wincred.
 const AUTH_ENV_VARS = ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"];
 
 function shorten(text, limit = 72) {
@@ -513,6 +520,44 @@ export function buildCopilotArgs(options) {
   // reviews. Opt-in — defaults to the agent picking up repo instructions.
   if (options.noCustomInstructions) {
     args.push("--no-custom-instructions");
+  }
+
+  // D7 / 0.6.0 — pass-through for Copilot's native share flags.
+  //   `--share[=path]` writes a markdown transcript after a non-interactive
+  //   run completes (default `./copilot-session-<id>.md`). Setting an
+  //   explicit `shareMarkdownPath` implies `shareMarkdown` — emit the
+  //   `=path` form so we don't double-emit a bare `--share`.
+  //   `--share-gist` uploads the transcript to a secret GitHub gist.
+  if (typeof options.shareMarkdownPath === "string" && options.shareMarkdownPath.trim()) {
+    args.push(`--share=${options.shareMarkdownPath.trim()}`);
+  } else if (options.shareMarkdown) {
+    args.push("--share");
+  }
+  if (options.shareGist) {
+    args.push("--share-gist");
+  }
+
+  // D9 / 0.6.0 — MCP pass-through.
+  //   `--add-github-mcp-tool <tool>` (repeatable) opts a single GitHub MCP
+  //   tool back in on top of the default CLI subset.
+  //   `--additional-mcp-config <json|@path>` (repeatable) augments the user's
+  //   `~/.copilot/mcp-config.json` for this session only.
+  // Both flags are Copilot-native; we only forward what's set. Wired only
+  // for /copilot:rescue (task) and /copilot:plan upstream — reviews stay
+  // untouched to preserve the read-only contract.
+  if (Array.isArray(options.addGithubMcpTools)) {
+    for (const tool of options.addGithubMcpTools) {
+      if (typeof tool === "string" && tool.trim()) {
+        args.push("--add-github-mcp-tool", tool.trim());
+      }
+    }
+  }
+  if (Array.isArray(options.additionalMcpConfigs)) {
+    for (const cfg of options.additionalMcpConfigs) {
+      if (typeof cfg === "string" && cfg.trim()) {
+        args.push("--additional-mcp-config", cfg.trim());
+      }
+    }
   }
 
   if (Array.isArray(options.addDirs)) {

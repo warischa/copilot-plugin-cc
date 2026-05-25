@@ -72,10 +72,10 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/copilot-companion.mjs setup [--json]",
-      "  node scripts/copilot-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>]",
-      "  node scripts/copilot-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--no-custom-instructions] [focus ...]",
-      "  node scripts/copilot-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--autopilot [--max-autopilot-continues <N>]] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [prompt]",
-      "  node scripts/copilot-companion.mjs plan [--background] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [prompt]",
+      "  node scripts/copilot-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--share[=<path>]|--share-path <path>] [--share-gist]",
+      "  node scripts/copilot-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--no-custom-instructions] [--share[=<path>]|--share-path <path>] [--share-gist] [focus ...]",
+      "  node scripts/copilot-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--autopilot [--max-autopilot-continues <N>]] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [prompt]",
+      "  node scripts/copilot-companion.mjs plan [--background] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [prompt]",
       "  node scripts/copilot-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/copilot-companion.mjs result [job-id] [--json]",
       "  node scripts/copilot-companion.mjs cancel [job-id] [--json]"
@@ -93,6 +93,31 @@ function outputResult(value, asJson) {
 
 function outputCommandResult(payload, rendered, asJson) {
   outputResult(asJson ? payload : rendered, asJson);
+}
+
+// D9 / 0.6.0 — split a CLI comma-list into a deduped string[]. Used by
+// `--mcp-tool foo,bar` to drive multiple `--add-github-mcp-tool` flags.
+// Returns an empty array for null / empty input so callers can just
+// check `.length`. We deliberately do NOT split on whitespace or accept
+// JSON-style arrays — comma is the documented form, and MCP config
+// JSON itself contains commas (use --mcp-config for that).
+export function parseCommaSeparatedList(value) {
+  if (value == null || value === "") {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return parseCommaSeparatedList(value.join(","));
+  }
+  const seen = new Set();
+  const out = [];
+  for (const raw of String(value).split(",")) {
+    const trimmed = raw.trim();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+  }
+  return out;
 }
 
 // Parse a CLI value expected to be a positive integer (e.g.
@@ -294,6 +319,9 @@ async function executeReviewRun(request) {
     allowAllTools: true,
     denyTools: buildReviewDenyTools(request.denyTools),
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
+    shareMarkdown: Boolean(request.shareMarkdown),
+    shareMarkdownPath: request.shareMarkdownPath ?? null,
+    shareGist: Boolean(request.shareGist),
     onProgress: request.onProgress
   });
 
@@ -355,6 +383,9 @@ async function executeAdversarialReviewRun(request) {
     denyTools: buildReviewDenyTools(request.denyTools),
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
     noCustomInstructions: Boolean(request.noCustomInstructions),
+    shareMarkdown: Boolean(request.shareMarkdown),
+    shareMarkdownPath: request.shareMarkdownPath ?? null,
+    shareGist: Boolean(request.shareGist),
     onProgress: request.onProgress
   });
 
@@ -433,6 +464,11 @@ async function executeTaskRun(request) {
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
     autopilot: Boolean(request.autopilot),
     maxAutopilotContinues: request.maxAutopilotContinues ?? null,
+    shareMarkdown: Boolean(request.shareMarkdown),
+    shareMarkdownPath: request.shareMarkdownPath ?? null,
+    shareGist: Boolean(request.shareGist),
+    addGithubMcpTools: Array.isArray(request.addGithubMcpTools) ? request.addGithubMcpTools : undefined,
+    additionalMcpConfigs: Array.isArray(request.additionalMcpConfigs) ? request.additionalMcpConfigs : undefined,
     onProgress: request.onProgress
   });
 
@@ -547,7 +583,12 @@ function buildTaskRequest({
   denyTools,
   addDirs,
   autopilot = false,
-  maxAutopilotContinues = null
+  maxAutopilotContinues = null,
+  shareMarkdown = false,
+  shareMarkdownPath = null,
+  shareGist = false,
+  addGithubMcpTools = null,
+  additionalMcpConfigs = null
 }) {
   return {
     cwd,
@@ -563,7 +604,18 @@ function buildTaskRequest({
     maxAutopilotContinues:
       Number.isFinite(maxAutopilotContinues) && maxAutopilotContinues > 0
         ? maxAutopilotContinues
-        : null
+        : null,
+    shareMarkdown: Boolean(shareMarkdown) || Boolean(shareMarkdownPath),
+    shareMarkdownPath: shareMarkdownPath ?? null,
+    shareGist: Boolean(shareGist),
+    addGithubMcpTools:
+      Array.isArray(addGithubMcpTools) && addGithubMcpTools.length > 0
+        ? [...addGithubMcpTools]
+        : undefined,
+    additionalMcpConfigs:
+      Array.isArray(additionalMcpConfigs) && additionalMcpConfigs.length > 0
+        ? [...additionalMcpConfigs]
+        : undefined
   };
 }
 
@@ -701,8 +753,8 @@ function enqueueBackgroundTask(cwd, job, request, options = {}) {
 
 async function handleReview(argv) {
   const { options: rawOptions } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "cwd"],
-    booleanOptions: ["json", "background", "wait"],
+    valueOptions: ["base", "scope", "model", "cwd", "share-path"],
+    booleanOptions: ["json", "background", "wait", "share", "share-gist"],
     aliasMap: {
       m: "model"
     }
@@ -738,6 +790,9 @@ async function handleReview(argv) {
         model: options.model,
         denyTools: Array.isArray(options.denyTools) ? options.denyTools : undefined,
         addDirs: Array.isArray(options.addDirs) ? options.addDirs : undefined,
+        shareMarkdown: Boolean(options.share) || Boolean(options["share-path"]),
+        shareMarkdownPath: options["share-path"] ?? null,
+        shareGist: Boolean(options["share-gist"]),
         onProgress: progress
       }),
     { json: options.json }
@@ -746,8 +801,15 @@ async function handleReview(argv) {
 
 async function handleAdversarialReview(argv) {
   const { options: rawOptions, positionals } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "cwd"],
-    booleanOptions: ["json", "background", "wait", "no-custom-instructions"],
+    valueOptions: ["base", "scope", "model", "cwd", "share-path"],
+    booleanOptions: [
+      "json",
+      "background",
+      "wait",
+      "no-custom-instructions",
+      "share",
+      "share-gist"
+    ],
     aliasMap: {
       m: "model"
     }
@@ -786,6 +848,9 @@ async function handleAdversarialReview(argv) {
         denyTools: Array.isArray(options.denyTools) ? options.denyTools : undefined,
         addDirs: Array.isArray(options.addDirs) ? options.addDirs : undefined,
         noCustomInstructions: Boolean(options["no-custom-instructions"]),
+        shareMarkdown: Boolean(options.share) || Boolean(options["share-path"]),
+        shareMarkdownPath: options["share-path"] ?? null,
+        shareGist: Boolean(options["share-gist"]),
         onProgress: progress
       }),
     { json: options.json }
@@ -794,7 +859,16 @@ async function handleAdversarialReview(argv) {
 
 async function handleTask(argv) {
   const { options: rawOptions, positionals } = parseCommandInput(argv, {
-    valueOptions: ["model", "effort", "cwd", "prompt-file", "max-autopilot-continues"],
+    valueOptions: [
+      "model",
+      "effort",
+      "cwd",
+      "prompt-file",
+      "max-autopilot-continues",
+      "share-path",
+      "mcp-tool",
+      "mcp-config"
+    ],
     booleanOptions: [
       "json",
       "write",
@@ -802,7 +876,9 @@ async function handleTask(argv) {
       "resume",
       "fresh",
       "background",
-      "autopilot"
+      "autopilot",
+      "share",
+      "share-gist"
     ],
     aliasMap: {
       m: "model"
@@ -827,6 +903,22 @@ async function handleTask(argv) {
   if (maxAutopilotContinues != null && !autopilot) {
     throw new Error("--max-autopilot-continues requires --autopilot.");
   }
+  // D7 — share flags: --share (boolean, default Copilot path) or
+  // --share-path <file> (explicit path implies --share). --share-gist
+  // uploads the transcript to a secret gist.
+  const shareMarkdownPath =
+    typeof options["share-path"] === "string" && options["share-path"].trim()
+      ? options["share-path"].trim()
+      : null;
+  const shareMarkdown = Boolean(options.share) || Boolean(shareMarkdownPath);
+  const shareGist = Boolean(options["share-gist"]);
+  // D9 — MCP flags. --mcp-tool accepts a comma-separated list; --mcp-config
+  // is a single JSON string or `@filepath` (Copilot's documented form).
+  const addGithubMcpTools = parseCommaSeparatedList(options["mcp-tool"]);
+  const additionalMcpConfigs =
+    typeof options["mcp-config"] === "string" && options["mcp-config"].trim()
+      ? [options["mcp-config"].trim()]
+      : [];
   const prompt = readTaskPrompt(cwd, options, positionals);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);
@@ -856,7 +948,12 @@ async function handleTask(argv) {
       denyTools,
       addDirs,
       autopilot,
-      maxAutopilotContinues
+      maxAutopilotContinues,
+      shareMarkdown,
+      shareMarkdownPath,
+      shareGist,
+      addGithubMcpTools,
+      additionalMcpConfigs
     });
     const { payload } = enqueueBackgroundTask(cwd, job, request);
     outputCommandResult({ ...payload, jobId: job.id, title: job.title }, renderQueuedTaskLaunch({ ...payload, jobId: job.id, title: job.title }), options.json);
@@ -879,6 +976,11 @@ async function handleTask(argv) {
         addDirs,
         autopilot,
         maxAutopilotContinues,
+        shareMarkdown,
+        shareMarkdownPath,
+        shareGist,
+        addGithubMcpTools: addGithubMcpTools.length > 0 ? addGithubMcpTools : undefined,
+        additionalMcpConfigs: additionalMcpConfigs.length > 0 ? additionalMcpConfigs : undefined,
         onProgress: progress
       }),
     { json: options.json }
@@ -909,6 +1011,11 @@ async function executePlanRun(request) {
     planMode: true,
     denyTools: ["write", "shell"],
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
+    shareMarkdown: Boolean(request.shareMarkdown),
+    shareMarkdownPath: request.shareMarkdownPath ?? null,
+    shareGist: Boolean(request.shareGist),
+    addGithubMcpTools: Array.isArray(request.addGithubMcpTools) ? request.addGithubMcpTools : undefined,
+    additionalMcpConfigs: Array.isArray(request.additionalMcpConfigs) ? request.additionalMcpConfigs : undefined,
     onProgress: request.onProgress
   });
 
@@ -942,8 +1049,16 @@ async function executePlanRun(request) {
 
 async function handlePlan(argv) {
   const { options: rawOptions, positionals } = parseCommandInput(argv, {
-    valueOptions: ["model", "effort", "cwd", "prompt-file"],
-    booleanOptions: ["json", "background"],
+    valueOptions: [
+      "model",
+      "effort",
+      "cwd",
+      "prompt-file",
+      "share-path",
+      "mcp-tool",
+      "mcp-config"
+    ],
+    booleanOptions: ["json", "background", "share", "share-gist"],
     aliasMap: {
       m: "model"
     }
@@ -960,6 +1075,18 @@ async function handlePlan(argv) {
   const addDirs = Array.isArray(options.addDirs) ? options.addDirs : undefined;
   const prompt = readTaskPrompt(cwd, options, positionals);
   const redactSummary = options.redactSummary === true;
+
+  const shareMarkdownPath =
+    typeof options["share-path"] === "string" && options["share-path"].trim()
+      ? options["share-path"].trim()
+      : null;
+  const shareMarkdown = Boolean(options.share) || Boolean(shareMarkdownPath);
+  const shareGist = Boolean(options["share-gist"]);
+  const addGithubMcpTools = parseCommaSeparatedList(options["mcp-tool"]);
+  const additionalMcpConfigs =
+    typeof options["mcp-config"] === "string" && options["mcp-config"].trim()
+      ? [options["mcp-config"].trim()]
+      : [];
 
   if (!prompt) {
     throw new Error("Provide a prompt, a prompt file, or piped stdin describing what to plan.");
@@ -984,7 +1111,12 @@ async function handlePlan(argv) {
       effort,
       prompt,
       jobId: job.id,
-      addDirs
+      addDirs,
+      shareMarkdown,
+      shareMarkdownPath,
+      shareGist,
+      addGithubMcpTools: addGithubMcpTools.length > 0 ? addGithubMcpTools : undefined,
+      additionalMcpConfigs: additionalMcpConfigs.length > 0 ? additionalMcpConfigs : undefined
     };
     const { payload } = enqueueBackgroundTask(cwd, job, request, {
       jobClass: "plan"
@@ -1006,6 +1138,11 @@ async function handlePlan(argv) {
         effort,
         prompt,
         addDirs,
+        shareMarkdown,
+        shareMarkdownPath,
+        shareGist,
+        addGithubMcpTools: addGithubMcpTools.length > 0 ? addGithubMcpTools : undefined,
+        additionalMcpConfigs: additionalMcpConfigs.length > 0 ? additionalMcpConfigs : undefined,
         onProgress: progress
       }),
     { json: options.json }

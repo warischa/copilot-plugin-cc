@@ -156,7 +156,7 @@ These are **not bugs** — they were scoped out. Pick up here if extending.
 
 ## 5. Next-step menu
 
-Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7b (publish-release wrapper, shipped in 0.3.0). Every "Optional follow-up" then shipped in 0.2.0. The post-port review buckets (B1–B3 in 0.3.1, D1+D3+U1+U2 in 0.4.0, D5+D6+D8 in 0.5.0) are documented below.
+Items 1–6 shipped in 0.1.1. Item 7 split into 7a (bump-version, shipped) and 7b (publish-release wrapper, shipped in 0.3.0). Every "Optional follow-up" then shipped in 0.2.0. The post-port review buckets (B1–B3 in 0.3.1, D1+D3+U1+U2 in 0.4.0, D5+D6+D8 in 0.5.0, D2+D4+D7+D9+U3 in 0.6.0) are documented below.
 
 1. **[x] Integration smoke test against the real `copilot` binary** — `f556d9d`. `tests/integration.test.mjs` spawns the companion with a 1-line prompt, asserts the JSONL parse path captures the final answer, and verifies `result.sessionId` persists to the stored job file. **As of 0.2.0** opt-in via `COPILOT_INTEGRATION=1` instead of auto-running.
 2. **[x] `/copilot:adversarial-review`** — `0d3cd6f`. New prompt template + companion subcommand + slash command. Reuses the regular review's deny-tools + renderer, so review and adversarial-review share one pipeline. **As of 0.2.0** the prompt's attack-surface list is rebalanced toward broader buckets (correctness edge cases, perf, DX) instead of front-loading enterprise framing.
@@ -192,13 +192,17 @@ The new flags flow through one place — `buildCopilotArgs` in `lib/copilot.mjs`
 
 Also fixed a missed-in-0.4.0 bug: the companion's `VALID_REASONING_EFFORTS` set was out of sync with the plugin-config one (still rejected `none` and `max`). Synced both to the full Copilot set.
 
-Deferred items still on the menu:
+### Menu completion (0.6.0)
 
-- **[ ] D2** — Verify whether `COPILOT_GITHUB_TOKEN` env var is real. Not in docs; harmless to keep as a probe.
-- **[ ] D4** — Document the full resume forms (`--resume=<name>`, `--connect=<sessionId>`) in plugin README.
-- **[ ] D7** — `--share` option on review for markdown export. Low priority.
-- **[ ] D9** — MCP plumbing (`--add-github-mcp-tool`, `--additional-mcp-config`). Tracked for a future release.
-- **[ ] U3** — Route `[copilot] ...` progress lines to stderr instead of stdout. Low priority.
+Every deferred D-/U- item from the post-port menu is now closed. The five remaining buckets (D2, D4, D7, D9, U3) shipped together in 0.6.0 after a fresh probe of `copilot --help` and `copilot help environment` against Copilot CLI 1.0.52 confirmed the documented forms.
+
+- **[x] D2 / 0.6.0** — `COPILOT_GITHUB_TOKEN` is real. `copilot help environment` explicitly documents `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` (in that precedence order). Added a citation comment in `lib/copilot.mjs` so the next reader doesn't re-litigate.
+- **[x] D4 / 0.6.0** — Resume forms documented in plugin README. Copilot supports `--resume[=value]` (id / id-prefix / task id / case-insensitive name), `--continue`, `--connect[=sessionId]` (remote handoff), and `--session-id <uuid>`. The plugin always emits `--resume=<sessionId>`; the README "Resume forms" table explains the rest so power users know what's available from the bare `copilot` CLI.
+- **[x] D7 / 0.6.0** — `--share` / `--share-path <path>` / `--share-gist` pass through to Copilot on `/copilot:review`, `/copilot:adversarial-review`, `/copilot:rescue`, and `/copilot:plan`. `--share-path` implies `--share` and emits `--share=<path>` exactly once (suppressing the bare `--share` to avoid double-emission). All routed through `buildCopilotArgs` so the surface is unit-testable in one place.
+- **[x] D9 / 0.6.0** — MCP pass-through on `/copilot:rescue` and `/copilot:plan` only. `--mcp-tool <names>` takes a comma-separated list and emits one `--add-github-mcp-tool` per entry. `--mcp-config <json|@path>` is a single value that becomes `--additional-mcp-config`. Reviews and adversarial-reviews intentionally do **not** accept these — extending the tool surface at run time would break the read-only contract enforced by `REVIEW_BASELINE_DENY_TOOLS`.
+- **[x] U3 / 0.6.0** — Both `[copilot] ...` writers (`createProgressReporter` in `tracked-jobs.mjs`, `reportPluginConfigWarnings` in `plugin-config.mjs`) already write to `process.stderr`. Verified during the 0.6.0 sweep; no code change needed, marker flipped to closed.
+
+Future post-port discoveries (when Copilot CLI ships new flags or renames existing ones) should be appended below as a new dated bucket rather than mutating the closed entries above.
 
 ### Optional follow-ups — all shipped in 0.2.0
 

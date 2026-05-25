@@ -1,6 +1,6 @@
 ---
 description: Delegate investigation, an explicit fix request, or follow-up rescue work to the GitHub Copilot rescue subagent
-argument-hint: "[--background|--wait] [--resume|--fresh] [--model <model>] [--effort <low|medium|high|xhigh>] [what Copilot should investigate, solve, or continue]"
+argument-hint: "[--background|--wait] [--resume|--fresh] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--autopilot [--max-autopilot-continues <N>]] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [what Copilot should investigate, solve, or continue]"
 allowed-tools: Bash(node:*), AskUserQuestion, Agent
 ---
 

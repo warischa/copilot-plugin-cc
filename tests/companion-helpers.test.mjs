@@ -11,6 +11,7 @@ import path from "node:path";
 
 import {
   getJobKindLabel,
+  parseCommaSeparatedList,
   REVIEW_BASELINE_DENY_TOOLS
 } from "../plugins/copilot/scripts/copilot-companion.mjs";
 import {
@@ -227,5 +228,120 @@ describe("buildCopilotArgs (D5+D6+D8)", () => {
   it("D8: omits --no-custom-instructions by default", () => {
     const args = buildCopilotArgs({ prompt: "x" });
     assert.ok(!args.includes("--no-custom-instructions"));
+  });
+});
+
+describe("buildCopilotArgs (D7 share flags / 0.6.0)", () => {
+  it("D7: shareMarkdown alone pushes a bare --share", () => {
+    const args = buildCopilotArgs({ prompt: "x", shareMarkdown: true });
+    assert.ok(args.includes("--share"));
+    // No --share=path / no --share-gist when only --share was requested.
+    assert.ok(!args.some((arg) => arg.startsWith("--share=")));
+    assert.ok(!args.includes("--share-gist"));
+  });
+
+  it("D7: shareMarkdownPath pushes --share=<path> and suppresses bare --share", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      shareMarkdown: true,
+      shareMarkdownPath: "/tmp/out.md"
+    });
+    assert.ok(args.includes("--share=/tmp/out.md"));
+    // The bare --share token would double-emit, so it must be absent.
+    assert.ok(!args.includes("--share"));
+  });
+
+  it("D7: shareMarkdownPath alone is enough — implies share", () => {
+    const args = buildCopilotArgs({ prompt: "x", shareMarkdownPath: "out.md" });
+    assert.ok(args.includes("--share=out.md"));
+    assert.ok(!args.includes("--share"));
+  });
+
+  it("D7: shareGist pushes --share-gist independently of --share", () => {
+    const args = buildCopilotArgs({ prompt: "x", shareGist: true });
+    assert.ok(args.includes("--share-gist"));
+    assert.ok(!args.includes("--share"));
+  });
+
+  it("D7: empty / whitespace shareMarkdownPath is ignored", () => {
+    const args = buildCopilotArgs({ prompt: "x", shareMarkdownPath: "   " });
+    assert.ok(!args.some((arg) => arg.startsWith("--share")));
+  });
+
+  it("D7: defaults emit no share flags", () => {
+    const args = buildCopilotArgs({ prompt: "x" });
+    assert.ok(!args.some((arg) => arg.startsWith("--share")));
+  });
+});
+
+describe("buildCopilotArgs (D9 MCP flags / 0.6.0)", () => {
+  it("D9: addGithubMcpTools emits one --add-github-mcp-tool per entry", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      addGithubMcpTools: ["issues", "pull_requests"]
+    });
+    const flagIndexes = args
+      .map((arg, idx) => (arg === "--add-github-mcp-tool" ? idx : -1))
+      .filter((idx) => idx !== -1);
+    assert.equal(flagIndexes.length, 2);
+    assert.equal(args[flagIndexes[0] + 1], "issues");
+    assert.equal(args[flagIndexes[1] + 1], "pull_requests");
+  });
+
+  it("D9: additionalMcpConfigs emits one --additional-mcp-config per entry", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      additionalMcpConfigs: ["@./mcp.json", '{"servers":{}}']
+    });
+    const flagIndexes = args
+      .map((arg, idx) => (arg === "--additional-mcp-config" ? idx : -1))
+      .filter((idx) => idx !== -1);
+    assert.equal(flagIndexes.length, 2);
+    assert.equal(args[flagIndexes[0] + 1], "@./mcp.json");
+    assert.equal(args[flagIndexes[1] + 1], '{"servers":{}}');
+  });
+
+  it("D9: empty / blank entries in MCP lists are skipped", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      addGithubMcpTools: ["issues", "", "   "],
+      additionalMcpConfigs: ["@a.json", null, undefined]
+    });
+    assert.equal(args.filter((arg) => arg === "--add-github-mcp-tool").length, 1);
+    assert.equal(args.filter((arg) => arg === "--additional-mcp-config").length, 1);
+  });
+
+  it("D9: defaults emit no MCP flags", () => {
+    const args = buildCopilotArgs({ prompt: "x" });
+    assert.ok(!args.includes("--add-github-mcp-tool"));
+    assert.ok(!args.includes("--additional-mcp-config"));
+  });
+});
+
+describe("parseCommaSeparatedList (D9 helper)", () => {
+  it("returns an empty array for null/empty input", () => {
+    assert.deepEqual(parseCommaSeparatedList(undefined), []);
+    assert.deepEqual(parseCommaSeparatedList(null), []);
+    assert.deepEqual(parseCommaSeparatedList(""), []);
+  });
+
+  it("splits on commas and trims whitespace", () => {
+    assert.deepEqual(parseCommaSeparatedList("issues, pull_requests , workflows"), [
+      "issues",
+      "pull_requests",
+      "workflows"
+    ]);
+  });
+
+  it("dedupes preserving first-seen order", () => {
+    assert.deepEqual(parseCommaSeparatedList("a,b,a,c,b"), ["a", "b", "c"]);
+  });
+
+  it("drops empty entries from doubled commas or trailing commas", () => {
+    assert.deepEqual(parseCommaSeparatedList("a,,b,"), ["a", "b"]);
+  });
+
+  it("flattens arrays via join (for last-write-wins inputs upstream)", () => {
+    assert.deepEqual(parseCommaSeparatedList(["a,b", "c"]), ["a", "b", "c"]);
   });
 });

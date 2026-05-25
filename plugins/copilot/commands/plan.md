@@ -1,6 +1,6 @@
 ---
 description: Have Copilot produce a structured implementation plan (using its built-in plan mode) before any code is written
-argument-hint: "[--wait|--background] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [what to plan]"
+argument-hint: "[--wait|--background] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [what to plan]"
 allowed-tools: Bash(node:*), AskUserQuestion
 ---
 

@@ -111,7 +111,7 @@ Use it when you want Copilot to:
 > [!NOTE]
 > Open-ended tasks can run for a while. Use `--background` and check back with `/copilot:status`.
 
-Flags: `--background`, `--wait`, `--resume`, `--fresh`, `--model <name>`, `--effort <low|medium|high|xhigh>`.
+Flags: `--background`, `--wait`, `--resume`, `--fresh`, `--model <name>`, `--effort <none|low|medium|high|xhigh|max>`, `--autopilot`, `--max-autopilot-continues <N>`, `--share`, `--share-path <path>`, `--share-gist`, `--mcp-tool <names>`, `--mcp-config <json|@file>`.
 
 ```bash
 /copilot:rescue investigate why the tests started failing
@@ -119,6 +119,9 @@ Flags: `--background`, `--wait`, `--resume`, `--fresh`, `--model <name>`, `--eff
 /copilot:rescue --resume apply the top fix from the last run
 /copilot:rescue --model gpt-5.4 --effort medium investigate the flaky integration test
 /copilot:rescue --background investigate the regression
+/copilot:rescue --autopilot --max-autopilot-continues 3 finish the refactor
+/copilot:rescue --share investigate the regression and share the transcript
+/copilot:rescue --mcp-tool issues,pull_requests look up the open PRs blocking this fix
 ```
 
 You can also simply ask the main thread to delegate:
@@ -131,6 +134,9 @@ Notes:
 
 - If you do not pass `--model` or `--effort`, Copilot picks its own defaults.
 - Follow-up rescue requests can continue the latest Copilot session in the repo via `--resume`.
+- See [Resume forms](#resume-forms) below for the full set of session-resume options.
+- `--share` writes a markdown transcript at `./copilot-session-<id>.md` after the run; `--share-path <path>` overrides the location; `--share-gist` uploads to a secret GitHub gist instead. See [Sharing transcripts](#sharing-transcripts).
+- `--mcp-tool` and `--mcp-config` pass through to Copilot's [MCP integration](#mcp-passthrough).
 
 ### `/copilot:status`
 
@@ -143,7 +149,7 @@ Shows running and recent Copilot jobs for the current repository.
 
 ### `/copilot:result`
 
-Shows the final stored Copilot output for a finished job. When available it includes the Copilot session ID so you can reopen the run with `copilot --resume=<id>`.
+Shows the final stored Copilot output for a finished job. When available it includes the Copilot session ID so you can reopen the run with `copilot --resume=<id>` (see [Resume forms](#resume-forms) for other options).
 
 ```bash
 /copilot:result
@@ -163,12 +169,65 @@ Cancels an active background Copilot job.
 
 Checks whether the `copilot` CLI is installed and authenticated. If `copilot` is missing and npm is available, can offer to install it.
 
+### Resume forms
+
+Copilot CLI exposes four ways to pick up a prior session. The plugin maps to them as follows:
+
+| Copilot flag | When it's used |
+|---|---|
+| `--resume=<id-or-prefix-or-name>` | What the plugin emits internally when you pass `/copilot:rescue --resume`. It always uses the stored session id from the previous tracked task. |
+| `--continue` | Not used by the plugin (we always have a specific id). Useful from the bare `copilot` CLI if you want the most recent session without naming it. |
+| `--connect[=sessionId]` | Connect to a *remote* session running on another machine (linked to GitHub web/mobile). The plugin does not orchestrate this directly. |
+| `--session-id <uuid>` | Resume by uuid, or pre-set the uuid for a new session. The plugin lets Copilot generate ids. |
+
+Practical tips:
+
+- After any rescue/task, the plugin prints `Copilot session ID: <id>` and a `Resume in Copilot: copilot --resume=<id>` hint — copy that to drop into the same session from a terminal.
+- `--resume`'s name match is **case-insensitive exact** against `--name`. The plugin names tracked tasks `copilot-task <first 56 chars of your prompt>`, so you can resume by quoting that name.
+- `--connect` is for cross-device handoff. If you started a long-running Copilot session in your browser and want to attach from the CLI, that's the flag — outside the plugin's tracked-job lifecycle.
+
+See [`copilot help`](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started) for the full list.
+
+### Sharing transcripts
+
+For any of `/copilot:review`, `/copilot:adversarial-review`, `/copilot:rescue`, and `/copilot:plan`:
+
+| Flag | What Copilot writes |
+|---|---|
+| `--share` | Markdown transcript at `./copilot-session-<id>.md` (Copilot default). |
+| `--share-path <path>` | Markdown transcript at the explicit path. Implies `--share`. |
+| `--share-gist` | Uploads the transcript to a **secret** GitHub gist after the run. Can be combined with `--share`/`--share-path`. |
+
+```bash
+/copilot:review --share
+/copilot:review --share-path reviews/2026-05-25-auth.md
+/copilot:rescue --share-gist investigate the regression
+```
+
+The file write happens **after** the run completes, so the plugin's read-only contract on reviews still holds while Copilot is working — the markdown file is the only side effect, and only if you opted in.
+
+### MCP passthrough
+
+`/copilot:rescue` and `/copilot:plan` accept two pass-through flags that wire into Copilot's MCP integration:
+
+| Flag | Notes |
+|---|---|
+| `--mcp-tool <names>` | Comma-separated list of GitHub MCP tools to enable on top of Copilot's default subset. Each name becomes a `--add-github-mcp-tool <name>` to Copilot. |
+| `--mcp-config <json\|@file>` | Single additional MCP servers configuration. Either an inline JSON string or `@<path>` to a JSON file. Augments `~/.copilot/mcp-config.json` for this run only. |
+
+```bash
+/copilot:rescue --mcp-tool issues,pull_requests close the linked tickets
+/copilot:plan --mcp-config @./mcp/sentry.json plan the sentry breadcrumb work
+```
+
+MCP flags are **not** exposed on `/copilot:review` and `/copilot:adversarial-review` — those commands keep their read-only contract by refusing to extend the tool surface at run time.
+
 ## How it works
 
 The plugin wraps the GitHub Copilot CLI in non-interactive mode:
 
 ```
-copilot -p "<prompt>" --output-format json --allow-all-tools [--model <m>] [--effort <e>] [--resume=<id>] [--name <session-name>]
+copilot -p "<prompt>" --output-format json --allow-all-tools [--model <m>] [--effort <e>] [--resume=<id>] [--name <session-name>] [--plan|--autopilot] [--share[=path]|--share-gist] [--add-github-mcp-tool <t>] [--additional-mcp-config <json|@file>]
 ```
 
 It parses the JSONL event stream (`assistant.message`, `assistant.turn_end`, `result`, ...) to surface progress, capture the final answer, and record the Copilot `sessionId` for later resume.
