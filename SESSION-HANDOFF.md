@@ -8,9 +8,12 @@
 
 Working tree was clean on `main` at v0.5.0 (commit `3642c9f`) before the session started. **156 tests pass + 1 skipped** (was 141 → +15 new tests for D7, D9, and the `parseCommaSeparatedList` helper). Integration test is still opt-in via `COPILOT_INTEGRATION=1`.
 
-Last actions:
+Last actions (in order):
 1. Verified every newly-claimed Copilot flag against `copilot --help` and `copilot help environment` on Copilot CLI 1.0.52 — found `COPILOT_GITHUB_TOKEN`, `--resume[=value]`, `--connect[=sessionId]`, `--continue`, `--session-id`, `--share[=path]`, `--share-gist`, `--add-github-mcp-tool`, `--additional-mcp-config` all documented exactly as we use them.
-2. Real end-to-end smoke test against the live binary: `node ...companion.mjs task --share-path /tmp/copilot-smoke-0.6.0.md --mcp-tool issues "Reply with the single word OK"` returned `OK`, exit 0, and the markdown transcript landed at the requested path. Both new feature buckets verified end-to-end.
+2. Implemented D2+D4+D7+D9+U3 with 15 new unit tests; landed as commit `b84371d` "Close post-port menu (D2+D4+D7+D9+U3)".
+3. Real end-to-end smoke test against the live binary: `node ...companion.mjs task --share-path /tmp/copilot-smoke-0.6.0.md --mcp-tool issues "Reply with the single word OK"` returned `OK`, exit 0, and the markdown transcript landed at the requested path (437B, valid content). Both new feature buckets verified end-to-end before tagging.
+4. Cut `v0.6.0` end-to-end via `npm run publish-release -- 0.6.0`: manifest-only commit `73456d3` "Release 0.6.0", tag `v0.6.0`, push to `origin/main`, GitHub Release created at https://github.com/warischa/copilot-plugin-cc/releases/tag/v0.6.0.
+5. CI run `26380250309` completed `success` across all 4 matrix jobs (Node 20 ubuntu, Node 22 ubuntu/macos/windows).
 
 ## Previous session handoff — 2026-05-24 (through `v0.5.0`)
 
@@ -260,7 +263,8 @@ For the next Claude Code session, in order:
 - This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns, **but** the post-port review in 0.3.1/0.4.0/0.5.0/0.6.0 demonstrated that codex-era assumptions can mask real bugs. Always cross-check against the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices), [getting started](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started)) when porting a new feature. `copilot help <topic>` (especially `environment` and `permissions`) is the actual ground truth — the web docs lag.
 - The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account). See [DESIGN.md §2.7 "Project identity"](DESIGN.md).
 - **Tags shipped:** `v0.1.1`, `v0.2.0`, `v0.3.0`, `v0.3.1`, `v0.4.0`, `v0.5.0`, `v0.6.0`. Latest tag = latest release.
-- **Recent commits (newest first, pre-0.6.0):** `3642c9f` (Refresh SESSION-HANDOFF and DESIGN through v0.5.0), `060a5de` (Release 0.5.0), `d86a304` (D5+D6+D8), `e7e5bab` (Release 0.4.0), `aa1a7ad` (D1+D3+U1+U2), `2a9b85b` (Release 0.3.1), `ba39cd5` (B1+B2+B3), `1b7b64a` (Release 0.3.0).
+- **Recent commits (newest first):** `73456d3` (Release 0.6.0), `b84371d` (Close post-port menu D2+D4+D7+D9+U3), `3642c9f` (Refresh SESSION-HANDOFF and DESIGN through v0.5.0), `060a5de` (Release 0.5.0), `d86a304` (D5+D6+D8), `e7e5bab` (Release 0.4.0), `aa1a7ad` (D1+D3+U1+U2), `2a9b85b` (Release 0.3.1), `ba39cd5` (B1+B2+B3), `1b7b64a` (Release 0.3.0).
+- **CI matrix (verified 2026-05-25):** 4 jobs — Node 20 on `ubuntu-latest`, Node 22 on `ubuntu-latest` / `macos-latest` / `windows-latest`. Node 20 is only checked on Linux; Node 22 catches OS-specific issues. If you ever edit `.github/workflows/ci.yml`, this is the shape to preserve unless deliberately widening it.
 - Branch `main` is protected — no force-push, no deletion, linear history only. Routine commits and pushes are fine.
 - **Release workflow:** Single command — `npm run publish-release -- <version>`. Refuses on dirty tree or off-branch HEAD unless `--allow-dirty` / `--branch` is passed. See `docs/RELEASE.md`.
 - The `code-review-graph` build hook may regenerate `.code-review-graph/` at the repo root — it's in `.gitignore`.
