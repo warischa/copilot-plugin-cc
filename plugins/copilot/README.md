@@ -78,13 +78,18 @@ All slash commands run against the **current git repository**. Job state is scop
 - `--autopilot` — for `/copilot:rescue`, run Copilot in autopilot mode (multi-turn auto-continue)
 - `--max-autopilot-continues <N>` — cap the number of autopilot turns (Copilot default: 5)
 - `--no-custom-instructions` — for `/copilot:adversarial-review`, bypass `AGENTS.md` / repo instructions for a fresh-eyes review
+- `--share` / `--share-path <path>` / `--share-gist` — write the session transcript to markdown (default path / explicit path / secret GitHub gist). See the repo README "Sharing transcripts" table.
+- `--mcp-tool <names>` / `--mcp-config <json|@file>` — for `/copilot:rescue` and `/copilot:plan`, extend the GitHub MCP toolset or augment MCP-config for one run. Not exposed on reviews (read-only contract).
+- `--allow-tool <pats>` / `--allow-url <pats>` / `--deny-url <pats>` — symmetric allow/deny pass-through (comma lists) on all four agent commands. Copilot's deny rules always win, so reviews keep their `write`/`shell` deny baseline even if `--allow-tool=shell` is passed.
+- `--attachment <paths>` — for `/copilot:rescue` only, attach images or native documents (comma list) to the initial prompt.
+- `--allow-remote` / `--allow-ask-user` — opt out of the plugin's privacy hardening defaults (the plugin emits `--no-remote` and `--no-ask-user` for non-interactive runs; these flags suppress them individually).
 
 ## How it works
 
-The plugin spawns the Copilot CLI in non-interactive mode and parses its JSONL event stream:
+The plugin spawns the Copilot CLI in non-interactive mode and parses its JSONL event stream. By default it hardens two non-interactive defaults (`--no-remote` to disable remote session control from GitHub web/mobile, `--no-ask-user` to keep the agent from stalling on input that can't be answered):
 
 ```
-copilot -p "<prompt>" --output-format json --allow-all-tools [--model <m>] [--effort <e>] [--resume=<id>]
+copilot -p "<prompt>" --output-format json --allow-all-tools --no-remote --no-ask-user [--model <m>] [--effort <e>] [--resume=<id>] [--plan|--autopilot] [--share[=path]|--share-gist] [--add-github-mcp-tool <t>] [--additional-mcp-config <json|@file>] [--allow-tool=<p>] [--allow-url=<p>] [--deny-url=<p>] [--attachment <path>]
 ```
 
 It captures the final assistant message and the Copilot `sessionId` so finished jobs can be reopened with `copilot --resume=<id>`. Background jobs run as detached workers and update state files under `$CLAUDE_PLUGIN_DATA/state/<workspace-slug>`.
@@ -132,8 +137,6 @@ The plugin reads `~/.claude/plugins/copilot/config.json` (override with `COPILOT
 ## Not in this version
 
 - Stop-time review gate (Stop hook) — not shipped yet
-- `/copilot:share` (Copilot's `--share` flag for markdown export) — tracked for a future release
-- MCP plumbing (`--add-github-mcp-tool`, `--additional-mcp-config`) — tracked for a future release
 
 ## License
 
