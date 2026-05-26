@@ -1,6 +1,74 @@
-# Session handoff — 2026-05-26 (through `v0.7.0`)
+# Session handoff — 2026-05-26 (through `v0.8.0`)
 
 ## Current task and status
+
+**Status:** Done. The 0.8.0 session shipped a security trifecta on top of the 0.7.0 polish bucket:
+
+- `v0.8.0` — security trifecta (E1+E2+E3): `--secret-env <vars>` pass-through on all four agent commands (forwards as `--secret-env-vars=<name>`), `--allow-auto-update` escape hatch for the always-on `--no-auto-update` default, and `--session-name <name>` user override on all four agent commands.
+
+Working tree was clean on `main` at v0.7.0 (commit `7690d58`) before the session started. **180 tests pass + 1 skipped** (was 172 → +8 new tests across E1/E2/E3). Integration test is still opt-in via `COPILOT_INTEGRATION=1`.
+
+Last actions (in order):
+1. Re-probed `copilot --help` against Copilot CLI 1.0.52 — **same version** as the 0.7.0 ship. **Zero upstream drift.** But the probe found one missed flag: `--secret-env-vars` (security: strips env-var values from shell + MCP envs and redacts from output). Two adjacent audit findings: `--no-auto-update` was already unconditionally emitted but had no escape hatch (asymmetric with `--no-remote` / `--no-ask-user`); `--name` was already wired in `buildCopilotArgs` and used internally by `executeTaskRun` / `executePlanRun` but never exposed at the CLI surface.
+2. Confirmed via `gh issue list` that there are zero open user-reported issues.
+3. Decision gate via `AskUserQuestion`: user picked "Security trifecta" — ship all three (E1+E2+E3) in one bucket.
+4. Implemented E1+E2+E3 with 8 new unit tests; landed as commit `7766693` "Security trifecta — secret-env scrub + auto-update lock + session-name (E1+E2+E3)".
+5. Real end-to-end smoke test against the live binary: `task --secret-env DUMMY_KEY,ANOTHER_KEY --session-name "0.8.0 smoke test" "Reply with exactly the single word OK..."` returned `OK` exit 0 — proving all three flags wire cleanly through `buildCopilotArgs` → `runCopilotPrompt` → Copilot's arg parser.
+6. Cut `v0.8.0` via `npm run publish-release -- 0.8.0`: manifest-only commit `9ba4c7f` "Release 0.8.0", tag `v0.8.0`, pushed, GitHub Release created at https://github.com/warischa/copilot-plugin-cc/releases/tag/v0.8.0.
+7. CI run pending verification at handoff write time — see "Important context" footer for the final status once observed.
+
+## What this 0.8.0 session shipped
+
+One bucket, one release. Same drift-vs-coverage probe standard as 0.7.0: re-probe `copilot --help`, *then* audit our `buildCopilotArgs` against it (not just the documented flags we'd planned to wire). The audit turned up the most value this round — Copilot CLI is still 1.0.52, so the upstream-drift channel was dry, but the audit channel surfaced one genuine gap (`--secret-env-vars`) and two latent ones (no `--allow-auto-update`, no `--session-name` exposure).
+
+### E1 — `--secret-env <vars>` on all four agent commands
+
+`buildCopilotArgs` now accepts `secretEnvVars: string[]` and emits one `--secret-env-vars=<name>` per entry. The companion CLI parses `--secret-env <comma-list>` via the existing `parseCommaSeparatedList` helper. Available on `/copilot:review`, `/copilot:adversarial-review`, `/copilot:rescue`, and `/copilot:plan`.
+
+**What Copilot does with it** (per `copilot help environment` on 1.0.52): the *values* of the named vars are stripped from shell and MCP server environments at the boundary, and redacted from output. Variable *names* still appear in logs — only values are scrubbed. Defense-in-depth on top of the permissions model: even if a tool is allowed and inherits env, Copilot scrubs the value before the child process sees it.
+
+Wired on **all four** commands intentionally — secret leakage isn't a write-only risk. A review tool reading `$OPENAI_API_KEY` and echoing it in its analysis is exactly the case `--secret-env-vars` is meant to block.
+
+### E2 — `--no-auto-update` always-on + `--allow-auto-update` escape hatch
+
+The plugin was already emitting `--no-auto-update` unconditionally — found at `lib/copilot.mjs:483` from before this session. But the always-on emission was asymmetric with the 0.7.0 `--no-remote` / `--no-ask-user` pattern (those have `--allow-remote` / `--allow-ask-user` escape hatches). Fixed: refactored the emission to be gated by `!options.allowAutoUpdate`, with `--allow-auto-update` exposed at the companion CLI on all four agent commands.
+
+**Why the lock is the right default:** mid-run binary upgrades change behavior under us. We test each plugin release against a known Copilot CLI version (1.0.52 currently). If `copilot` auto-updates between the `--version` probe and the `-p` execution, the user gets behavior the plugin maintainer hasn't validated. The escape hatch is for users who actively want the CLI to upgrade itself (rare, but documented).
+
+### E3 — `--session-name <name>` user override on all four agent commands
+
+`buildCopilotArgs` already accepted `options.sessionName` and emitted `--name <value>` — it was used internally by `executeTaskRun` (auto-named `copilot-task <excerpt>`) and `executePlanRun` (auto-named `copilot-task plan: <excerpt>`), but the companion CLI never exposed a way for users to override the auto-generated value.
+
+Now exposed as `--session-name <name>` on all four agent commands. When set, it overrides the auto-generated name. When unset (the default), the existing auto-naming behavior is preserved. Reviews — which previously didn't pass a `sessionName` at all — now accept it too so power users can `copilot --resume="review for PR-123"` from the bare CLI after the plugin prints the session id.
+
+The override path resolves precedence cleanly: resume runs (`--resume-last` / `--resume`) keep the existing session's name (null tells Copilot to preserve it) and ignore `--session-name`. Only fresh sessions honor the override.
+
+### End-to-end smoke test against Copilot CLI 1.0.52
+
+One live call exercised all three new buckets at once:
+
+```bash
+node plugins/copilot/scripts/copilot-companion.mjs task \
+  --secret-env DUMMY_KEY,ANOTHER_KEY \
+  --session-name "0.8.0 smoke test" \
+  "Reply with exactly the single word OK and nothing else."
+```
+
+Result: `OK`, exit 0. Copilot accepted both flags (it errors on unknown arg combos). Combined with the existing `--no-auto-update` baseline test (still passes after the refactor), all three E flags are verified live before tagging.
+
+The `--allow-auto-update` escape hatch was verified by direct args-array inspection rather than a second API call (defaults emit `--no-auto-update`; setting `allowAutoUpdate: true` suppresses it). Same approach as 0.7.0's allowRemote/allowAskUser tests — cheap, deterministic, no extra API spend.
+
+### Test count delta
+
+172 (pre-session) → **180** (post-session). 8 new tests in `companion-helpers.test.mjs`:
+
+- **3 for E1** — `secretEnvVars` per-entry emission, blank/null entry skipping, default-empty.
+- **2 for E2** — `--no-auto-update` default emit, `allowAutoUpdate` escape hatch suppression.
+- **3 for E3** — `sessionName` emits `--name <value>`, default omits `--name`, falsy values (null/undefined/empty string) all ignored.
+
+Plus the existing baseline `buildCopilotArgs` deepEqual already included `--no-auto-update` in the expected output — no test update needed since we kept it as the default. All green locally on Node 22 / macOS.
+
+## Previous session handoff — 2026-05-26 (through `v0.7.0`)
 
 **Status:** Done. The 0.7.0 session shipped a polish bucket on top of the 0.6.0 menu completion:
 
@@ -312,7 +380,7 @@ All flags flow through one place — `buildCopilotArgs` in `lib/copilot.mjs` —
 
 ## Deferred / not in scope this session
 
-The post-port menu (D-/U- items) is **fully closed as of 0.6.0**. What's still on the table:
+The post-port menu (D-/U- items) is **fully closed as of 0.6.0**. The 0.7.0 polish bucket and 0.8.0 security trifecta are also done. What's still on the table:
 
 - **[~] Linux real-host auth verification** — probe list is best-effort; not on the roadmap (maintainer doesn't use Linux). One-string fix in `COPILOT_SECRET_SERVICES` if a user reports breakage.
 - **[ ] Move repo to real `Claude-Copilot` GH org** — identity placeholder is documented in DESIGN.md §2.7 so the transfer is one `gh api -X POST .../transfer` away.
@@ -322,18 +390,19 @@ The post-port menu (D-/U- items) is **fully closed as of 0.6.0**. What's still o
 
 For the next Claude Code session, in order:
 
-1. Skim `DESIGN.md` (§2 decisions, §4 gotchas, §5 status — including **Post-port review**, **Agentic upgrade**, **Menu completion (0.6.0)**, and **Polish bucket (0.7.0)** subsections). It's the authoritative state-of-the-plugin doc — this SESSION-HANDOFF.md is the timeline, DESIGN.md is the contract.
+1. Skim `DESIGN.md` (§2 decisions, §4 gotchas, §5 status — including **Post-port review**, **Agentic upgrade**, **Menu completion (0.6.0)**, **Polish bucket (0.7.0)**, and **Security trifecta (0.8.0)** subsections). It's the authoritative state-of-the-plugin doc — this SESSION-HANDOFF.md is the timeline, DESIGN.md is the contract.
 2. If the user asks to cut a release: run `npm run publish-release -- <new>` (one command — see `docs/RELEASE.md`). The wrapper handles bump-version + tests + commit + tag + push + GH release.
-3. If the user asks to extend further: the post-port menu is empty AND the polish bucket is empty. Likely sources of new work are (a) Copilot CLI shipped a new flag we haven't ported (re-probe `copilot --help`), (b) a real user reported a bug, (c) the user wants a new feature bucket invented from scratch. Tier 2 review-tightening flags (`--disable-builtin-mcps`, `--disable-mcp-server`, `--disallow-temp-dir`, `--available-tools`/`--excluded-tools`, `--enable-reasoning-summaries`) and Tier 3 niche flags (`--add-github-mcp-toolset`, `--agent`, `--log-dir`/`--log-level`, `--mode`, `--session-id`, `--connect`, `--plugin-dir`, `--bash-env`/`--no-bash-env`, `--experimental`/`--no-experimental`) are documented in the 0.7.0 probe analysis but were deliberately not shipped — they're shelfable items if asked for.
+3. If the user asks to extend further: the post-port menu, polish bucket, AND security trifecta are all empty. Likely sources of new work are (a) Copilot CLI shipped a new flag we haven't ported (re-probe `copilot --help`), (b) a real user reported a bug, (c) the user wants a new feature bucket invented from scratch. **Tier 2 review-tightening flags** still on the shelf: `--disable-builtin-mcps`, `--disable-mcp-server`, `--disallow-temp-dir`, `--available-tools`/`--excluded-tools`, `--enable-reasoning-summaries`. **Tier 3 niche flags** still on the shelf: `--add-github-mcp-toolset`, `--agent`, `--log-dir`/`--log-level`, `--mode`, `--session-id`, `--connect`, `--plugin-dir`, `--bash-env`/`--no-bash-env`, `--experimental`/`--no-experimental`. (Documented in the 0.7.0 probe analysis — deliberately deferred, shelfable on request.)
 4. If `copilot` CLI changes: re-probe with `copilot -p "ping" --output-format json --allow-all-tools --no-color` and diff against `describeEvent()` in `lib/copilot.mjs`. The pure extractors (`extractTouchedFilePath`, `extractVersionLine`, `parseCmdKeyOutput`, `parseSecretToolOutput`, `detectInstructionsFiles`, `buildCopilotArgs`, `parseCommaSeparatedList`, `parseAttachmentPaths`) are exported specifically to make this kind of drift catch-able with one test.
 5. **Cross-reference both** the codex-plugin-cc reference at `https://github.com/openai/codex-plugin-cc` AND the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices)) before designing a new feature. The codex pattern is the shape; Copilot's actual flags are the ground truth — and they don't always agree (see §5 Post-port review).
+6. **Audit, don't just probe.** The 0.8.0 finding loop was: re-probe `copilot --help` → audit our `buildCopilotArgs` source against it → find both *missed* flags (genuinely new wiring needed) AND *latent* flags (already in our code but not exposed at the CLI surface). The audit channel turned up two of three 0.8.0 wins. Don't stop at the diff between `copilot --help` and our docs — check the diff between `copilot --help` and our actual source too.
 
 ## Important context
 
 - This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns, **but** the post-port review in 0.3.1/0.4.0/0.5.0/0.6.0 demonstrated that codex-era assumptions can mask real bugs. Always cross-check against the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices), [getting started](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started)) when porting a new feature. `copilot help <topic>` (especially `environment` and `permissions`) is the actual ground truth — the web docs lag.
 - The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account). See [DESIGN.md §2.7 "Project identity"](DESIGN.md).
-- **Tags shipped:** `v0.1.1`, `v0.2.0`, `v0.3.0`, `v0.3.1`, `v0.4.0`, `v0.5.0`, `v0.6.0`, `v0.7.0`. Latest tag = latest release.
-- **Recent commits (newest first):** `db15f28` (Release 0.7.0), `27ccf4d` (Polish bucket — privacy defaults, allow/deny tool/url, attachment A+B+C), `cc90379` (Refresh SESSION-HANDOFF after v0.6.0 ship), `73456d3` (Release 0.6.0), `b84371d` (Close post-port menu D2+D4+D7+D9+U3), `3642c9f` (Refresh SESSION-HANDOFF and DESIGN through v0.5.0), `060a5de` (Release 0.5.0), `d86a304` (D5+D6+D8), `e7e5bab` (Release 0.4.0), `aa1a7ad` (D1+D3+U1+U2).
+- **Tags shipped:** `v0.1.1`, `v0.2.0`, `v0.3.0`, `v0.3.1`, `v0.4.0`, `v0.5.0`, `v0.6.0`, `v0.7.0`, `v0.8.0`. Latest tag = latest release.
+- **Recent commits (newest first):** `9ba4c7f` (Release 0.8.0), `7766693` (Security trifecta — secret-env scrub + auto-update lock + session-name E1+E2+E3), `7690d58` (Sync plugin README with shipped flags through v0.7.0), `c4fc012` (Refresh SESSION-HANDOFF after v0.7.0 ship), `db15f28` (Release 0.7.0), `27ccf4d` (Polish bucket — privacy defaults, allow/deny tool/url, attachment A+B+C), `cc90379` (Refresh SESSION-HANDOFF after v0.6.0 ship), `73456d3` (Release 0.6.0), `b84371d` (Close post-port menu D2+D4+D7+D9+U3), `3642c9f` (Refresh SESSION-HANDOFF and DESIGN through v0.5.0).
 - **CI matrix (verified 2026-05-26):** 4 jobs — Node 20 on `ubuntu-latest`, Node 22 on `ubuntu-latest` / `macos-latest` / `windows-latest`. Node 20 is only checked on Linux; Node 22 catches OS-specific issues. If you ever edit `.github/workflows/ci.yml`, this is the shape to preserve unless deliberately widening it.
 - Branch `main` is protected — no force-push, no deletion, linear history only. Routine commits and pushes are fine.
 - **Release workflow:** Single command — `npm run publish-release -- <version>`. Refuses on dirty tree or off-branch HEAD unless `--allow-dirty` / `--branch` is passed. See `docs/RELEASE.md`.
