@@ -480,7 +480,15 @@ export function buildCopilotArgs(options) {
 
   args.push("--output-format", "json");
   args.push("--no-color");
-  args.push("--no-auto-update");
+
+  // E2 / 0.8.0 — `--no-auto-update` keeps the binary version pinned for
+  // the duration of the job. Mid-run upgrades would change behavior under
+  // us (we test against a known Copilot CLI version per release). Escape
+  // hatch `allowAutoUpdate` suppresses the `--no-` flag and falls back to
+  // Copilot's own default (auto-update on outside CI).
+  if (!options.allowAutoUpdate) {
+    args.push("--no-auto-update");
+  }
 
   if (options.allowAllTools !== false) {
     args.push("--allow-all-tools");
@@ -501,6 +509,21 @@ export function buildCopilotArgs(options) {
   }
   if (!options.allowAskUser) {
     args.push("--no-ask-user");
+  }
+
+  // E1 / 0.8.0 — `--secret-env-vars=<name>` strips the named env var's
+  // VALUE from shell and MCP server environments and redacts it from
+  // output. Defense-in-depth alongside the existing `denyTools` /
+  // privacy defaults: even if a tool is allowed and reads env, Copilot
+  // scrubs the value at the boundary. Forwarded as one flag per entry
+  // (Copilot accepts the comma-list form too, but per-entry composes
+  // cleanly with our existing helpers).
+  if (Array.isArray(options.secretEnvVars)) {
+    for (const name of options.secretEnvVars) {
+      if (typeof name === "string" && name.trim()) {
+        args.push(`--secret-env-vars=${name.trim()}`);
+      }
+    }
   }
 
   if (options.model) {

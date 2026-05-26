@@ -265,12 +265,42 @@ Every non-interactive plugin run hardens two defaults vs. the bare `copilot -p .
 
 Not exposed on review/adversarial-review/plan — those flows operate on the diff or a prompt, not arbitrary attachments.
 
+### Secret env scrub (0.8.0)
+
+All four agent commands accept `--secret-env <vars>` — a comma-separated list of environment variable names whose **values** Copilot will strip from shell and MCP server environments and redact from output. Defense-in-depth on top of the permissions model: even if a tool is allowed and inherits env, Copilot scrubs the value at the boundary.
+
+```bash
+/copilot:rescue --secret-env OPENAI_API_KEY,STRIPE_SECRET_KEY fix the failing webhook
+/copilot:review --secret-env GITHUB_TOKEN
+```
+
+Forwarded as one `--secret-env-vars=<name>` per entry. Variable *names* still appear in logs; only *values* are redacted.
+
+### Auto-update lock (0.8.0)
+
+Every non-interactive plugin run also emits `--no-auto-update` to keep the Copilot binary's version pinned for the duration of the job. Mid-run upgrades would change behavior under us (we test each release against a known Copilot CLI version). Escape hatch: `--allow-auto-update` falls back to Copilot's own default (auto-update on outside CI).
+
+```bash
+/copilot:task --allow-auto-update keep the CLI fresh during this run
+```
+
+### Session names (0.8.0)
+
+All four agent commands accept `--session-name <name>` — overrides the auto-generated `copilot-task <excerpt>` so sessions can be located later via `copilot --resume="<name>"` from the bare CLI.
+
+```bash
+/copilot:task --session-name "auth refactor" wire up the new login flow
+/copilot:plan --session-name "v0.9 milestone" plan the v0.9 release scope
+# Later:
+copilot --resume="auth refactor"
+```
+
 ## How it works
 
 The plugin wraps the GitHub Copilot CLI in non-interactive mode:
 
 ```
-copilot -p "<prompt>" --output-format json --allow-all-tools --no-remote --no-ask-user [--model <m>] [--effort <e>] [--resume=<id>] [--name <session-name>] [--plan|--autopilot] [--share[=path]|--share-gist] [--add-github-mcp-tool <t>] [--additional-mcp-config <json|@file>] [--allow-tool=<p>] [--allow-url=<p>] [--deny-url=<p>] [--attachment <path>]
+copilot -p "<prompt>" --output-format json --no-color --no-auto-update --allow-all-tools --no-remote --no-ask-user [--model <m>] [--effort <e>] [--resume=<id>] [--name <session-name>] [--plan|--autopilot] [--share[=path]|--share-gist] [--add-github-mcp-tool <t>] [--additional-mcp-config <json|@file>] [--allow-tool=<p>] [--allow-url=<p>] [--deny-url=<p>] [--secret-env-vars=<name>] [--attachment <path>]
 ```
 
 It parses the JSONL event stream (`assistant.message`, `assistant.turn_end`, `result`, ...) to surface progress, capture the final answer, and record the Copilot `sessionId` for later resume.

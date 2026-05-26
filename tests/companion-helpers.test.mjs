@@ -454,6 +454,63 @@ describe("buildCopilotArgs (C attachments / 0.7.0)", () => {
   });
 });
 
+describe("buildCopilotArgs (E1 secret-env-vars / 0.8.0)", () => {
+  it("secretEnvVars emits one --secret-env-vars=<name> per entry", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      secretEnvVars: ["OPENAI_API_KEY", "STRIPE_SECRET_KEY"]
+    });
+    assert.ok(args.includes("--secret-env-vars=OPENAI_API_KEY"));
+    assert.ok(args.includes("--secret-env-vars=STRIPE_SECRET_KEY"));
+  });
+
+  it("blank or non-string entries are skipped", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      secretEnvVars: ["OPENAI_API_KEY", "", "   ", null, undefined]
+    });
+    assert.equal(args.filter((a) => a.startsWith("--secret-env-vars=")).length, 1);
+  });
+
+  it("default emits no --secret-env-vars", () => {
+    const args = buildCopilotArgs({ prompt: "x" });
+    assert.ok(!args.some((a) => a.startsWith("--secret-env-vars=")));
+  });
+});
+
+describe("buildCopilotArgs (E2 auto-update lock / 0.8.0)", () => {
+  it("emits --no-auto-update by default", () => {
+    const args = buildCopilotArgs({ prompt: "x" });
+    assert.ok(args.includes("--no-auto-update"));
+  });
+
+  it("allowAutoUpdate suppresses --no-auto-update", () => {
+    const args = buildCopilotArgs({ prompt: "x", allowAutoUpdate: true });
+    assert.ok(!args.includes("--no-auto-update"));
+  });
+});
+
+describe("buildCopilotArgs (E3 sessionName / 0.8.0)", () => {
+  it("sessionName emits --name <value>", () => {
+    const args = buildCopilotArgs({ prompt: "x", sessionName: "my session" });
+    const idx = args.indexOf("--name");
+    assert.ok(idx >= 0);
+    assert.equal(args[idx + 1], "my session");
+  });
+
+  it("default emits no --name", () => {
+    const args = buildCopilotArgs({ prompt: "x" });
+    assert.ok(!args.includes("--name"));
+  });
+
+  it("falsy sessionName values (null, undefined, empty string) are ignored", () => {
+    for (const val of [null, undefined, ""]) {
+      const args = buildCopilotArgs({ prompt: "x", sessionName: val });
+      assert.ok(!args.includes("--name"), `--name was emitted for ${JSON.stringify(val)}`);
+    }
+  });
+});
+
 describe("parseAttachmentPaths (C helper / 0.7.0)", () => {
   let repoRoot;
   let fileA;

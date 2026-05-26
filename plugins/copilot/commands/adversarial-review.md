@@ -1,6 +1,6 @@
 ---
 description: Run a Copilot review that challenges the implementation approach, design choices, and assumptions
-argument-hint: '[--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--no-custom-instructions] [--share[=<path>]|--share-path <path>] [--share-gist] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--allow-remote] [--allow-ask-user] [focus ...]'
+argument-hint: '[--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--no-custom-instructions] [--share[=<path>]|--share-path <path>] [--share-gist] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--secret-env <vars>] [--session-name <name>] [--allow-remote] [--allow-ask-user] [--allow-auto-update] [focus ...]'
 disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
 ---

@@ -72,10 +72,10 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/copilot-companion.mjs setup [--json]",
-      "  node scripts/copilot-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--share[=<path>]|--share-path <path>] [--share-gist] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--allow-remote] [--allow-ask-user]",
-      "  node scripts/copilot-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--no-custom-instructions] [--share[=<path>]|--share-path <path>] [--share-gist] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--allow-remote] [--allow-ask-user] [focus ...]",
-      "  node scripts/copilot-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--autopilot [--max-autopilot-continues <N>]] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--attachment <paths>] [--allow-remote] [--allow-ask-user] [prompt]",
-      "  node scripts/copilot-companion.mjs plan [--background] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--allow-remote] [--allow-ask-user] [prompt]",
+      "  node scripts/copilot-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--share[=<path>]|--share-path <path>] [--share-gist] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--secret-env <vars>] [--session-name <name>] [--allow-remote] [--allow-ask-user] [--allow-auto-update]",
+      "  node scripts/copilot-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--no-custom-instructions] [--share[=<path>]|--share-path <path>] [--share-gist] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--secret-env <vars>] [--session-name <name>] [--allow-remote] [--allow-ask-user] [--allow-auto-update] [focus ...]",
+      "  node scripts/copilot-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--autopilot [--max-autopilot-continues <N>]] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--secret-env <vars>] [--session-name <name>] [--attachment <paths>] [--allow-remote] [--allow-ask-user] [--allow-auto-update] [prompt]",
+      "  node scripts/copilot-companion.mjs plan [--background] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--secret-env <vars>] [--session-name <name>] [--allow-remote] [--allow-ask-user] [--allow-auto-update] [prompt]",
       "  node scripts/copilot-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/copilot-companion.mjs result [job-id] [--json]",
       "  node scripts/copilot-companion.mjs cancel [job-id] [--json]"
@@ -345,14 +345,17 @@ async function executeReviewRun(request) {
   const result = await runCopilotPrompt(context.repoRoot, {
     prompt,
     model: request.model,
+    sessionName: request.sessionName ?? null,
     allowAllTools: true,
     denyTools: buildReviewDenyTools(request.denyTools),
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
     allowTools: Array.isArray(request.allowTools) ? request.allowTools : undefined,
     allowUrls: Array.isArray(request.allowUrls) ? request.allowUrls : undefined,
     denyUrls: Array.isArray(request.denyUrls) ? request.denyUrls : undefined,
+    secretEnvVars: Array.isArray(request.secretEnvVars) ? request.secretEnvVars : undefined,
     allowRemote: Boolean(request.allowRemote),
     allowAskUser: Boolean(request.allowAskUser),
+    allowAutoUpdate: Boolean(request.allowAutoUpdate),
     shareMarkdown: Boolean(request.shareMarkdown),
     shareMarkdownPath: request.shareMarkdownPath ?? null,
     shareGist: Boolean(request.shareGist),
@@ -413,14 +416,17 @@ async function executeAdversarialReviewRun(request) {
   const result = await runCopilotPrompt(context.repoRoot, {
     prompt,
     model: request.model,
+    sessionName: request.sessionName ?? null,
     allowAllTools: true,
     denyTools: buildReviewDenyTools(request.denyTools),
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
     allowTools: Array.isArray(request.allowTools) ? request.allowTools : undefined,
     allowUrls: Array.isArray(request.allowUrls) ? request.allowUrls : undefined,
     denyUrls: Array.isArray(request.denyUrls) ? request.denyUrls : undefined,
+    secretEnvVars: Array.isArray(request.secretEnvVars) ? request.secretEnvVars : undefined,
     allowRemote: Boolean(request.allowRemote),
     allowAskUser: Boolean(request.allowAskUser),
+    allowAutoUpdate: Boolean(request.allowAutoUpdate),
     noCustomInstructions: Boolean(request.noCustomInstructions),
     shareMarkdown: Boolean(request.shareMarkdown),
     shareMarkdownPath: request.shareMarkdownPath ?? null,
@@ -492,10 +498,20 @@ async function executeTaskRun(request) {
     throw new Error("Provide a prompt, a prompt file, piped stdin, or use --resume-last.");
   }
 
+  // E3 / 0.8.0 — user-supplied --session-name overrides the auto-generated
+  // `copilot-task <excerpt>` so power users can find sessions with
+  // `copilot --resume="<name>"`. Resume runs keep their existing session
+  // name (null tells Copilot to preserve it).
+  const taskSessionName = resumeSessionId
+    ? null
+    : request.sessionName?.trim()
+      ? request.sessionName.trim()
+      : buildPersistentTaskSessionName(request.prompt || DEFAULT_CONTINUE_PROMPT);
+
   const result = await runCopilotPrompt(workspaceRoot, {
     prompt: request.prompt || (resumeSessionId ? DEFAULT_CONTINUE_PROMPT : ""),
     resumeSessionId,
-    sessionName: resumeSessionId ? null : buildPersistentTaskSessionName(request.prompt || DEFAULT_CONTINUE_PROMPT),
+    sessionName: taskSessionName,
     model: request.model,
     effort: request.effort,
     allowAllTools: true,
@@ -511,9 +527,11 @@ async function executeTaskRun(request) {
     allowTools: Array.isArray(request.allowTools) ? request.allowTools : undefined,
     allowUrls: Array.isArray(request.allowUrls) ? request.allowUrls : undefined,
     denyUrls: Array.isArray(request.denyUrls) ? request.denyUrls : undefined,
+    secretEnvVars: Array.isArray(request.secretEnvVars) ? request.secretEnvVars : undefined,
     attachments: Array.isArray(request.attachments) ? request.attachments : undefined,
     allowRemote: Boolean(request.allowRemote),
     allowAskUser: Boolean(request.allowAskUser),
+    allowAutoUpdate: Boolean(request.allowAutoUpdate),
     onProgress: request.onProgress
   });
 
@@ -637,9 +655,12 @@ function buildTaskRequest({
   allowTools = null,
   allowUrls = null,
   denyUrls = null,
+  secretEnvVars = null,
   attachments = null,
   allowRemote = false,
-  allowAskUser = false
+  allowAskUser = false,
+  allowAutoUpdate = false,
+  sessionName = null
 }) {
   return {
     cwd,
@@ -673,10 +694,16 @@ function buildTaskRequest({
       Array.isArray(allowUrls) && allowUrls.length > 0 ? [...allowUrls] : undefined,
     denyUrls:
       Array.isArray(denyUrls) && denyUrls.length > 0 ? [...denyUrls] : undefined,
+    secretEnvVars:
+      Array.isArray(secretEnvVars) && secretEnvVars.length > 0
+        ? [...secretEnvVars]
+        : undefined,
     attachments:
       Array.isArray(attachments) && attachments.length > 0 ? [...attachments] : undefined,
     allowRemote: Boolean(allowRemote),
-    allowAskUser: Boolean(allowAskUser)
+    allowAskUser: Boolean(allowAskUser),
+    allowAutoUpdate: Boolean(allowAutoUpdate),
+    sessionName: typeof sessionName === "string" && sessionName.trim() ? sessionName.trim() : null
   };
 }
 
@@ -822,7 +849,9 @@ async function handleReview(argv) {
       "share-path",
       "allow-tool",
       "allow-url",
-      "deny-url"
+      "deny-url",
+      "secret-env",
+      "session-name"
     ],
     booleanOptions: [
       "json",
@@ -831,7 +860,8 @@ async function handleReview(argv) {
       "share",
       "share-gist",
       "allow-remote",
-      "allow-ask-user"
+      "allow-ask-user",
+      "allow-auto-update"
     ],
     aliasMap: {
       m: "model"
@@ -852,6 +882,13 @@ async function handleReview(argv) {
   const allowTools = parseCommaSeparatedList(options["allow-tool"]);
   const allowUrls = parseCommaSeparatedList(options["allow-url"]);
   const denyUrls = parseCommaSeparatedList(options["deny-url"]);
+  // E1 / 0.8.0 — comma-list of env var names whose values Copilot will
+  // strip from shell+MCP envs and redact from output.
+  const secretEnvVars = parseCommaSeparatedList(options["secret-env"]);
+  const sessionName =
+    typeof options["session-name"] === "string" && options["session-name"].trim()
+      ? options["session-name"].trim()
+      : null;
 
   const job = createCompanionJob({
     prefix: "review",
@@ -875,8 +912,11 @@ async function handleReview(argv) {
         allowTools: allowTools.length > 0 ? allowTools : undefined,
         allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
         denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+        secretEnvVars: secretEnvVars.length > 0 ? secretEnvVars : undefined,
         allowRemote: Boolean(options["allow-remote"]),
         allowAskUser: Boolean(options["allow-ask-user"]),
+        allowAutoUpdate: Boolean(options["allow-auto-update"]),
+        sessionName,
         shareMarkdown: Boolean(options.share) || Boolean(options["share-path"]),
         shareMarkdownPath: options["share-path"] ?? null,
         shareGist: Boolean(options["share-gist"]),
@@ -896,7 +936,9 @@ async function handleAdversarialReview(argv) {
       "share-path",
       "allow-tool",
       "allow-url",
-      "deny-url"
+      "deny-url",
+      "secret-env",
+      "session-name"
     ],
     booleanOptions: [
       "json",
@@ -906,7 +948,8 @@ async function handleAdversarialReview(argv) {
       "share",
       "share-gist",
       "allow-remote",
-      "allow-ask-user"
+      "allow-ask-user",
+      "allow-auto-update"
     ],
     aliasMap: {
       m: "model"
@@ -937,6 +980,11 @@ async function handleAdversarialReview(argv) {
   const allowTools = parseCommaSeparatedList(options["allow-tool"]);
   const allowUrls = parseCommaSeparatedList(options["allow-url"]);
   const denyUrls = parseCommaSeparatedList(options["deny-url"]);
+  const secretEnvVars = parseCommaSeparatedList(options["secret-env"]);
+  const sessionName =
+    typeof options["session-name"] === "string" && options["session-name"].trim()
+      ? options["session-name"].trim()
+      : null;
 
   await runForegroundCommand(
     job,
@@ -952,8 +1000,11 @@ async function handleAdversarialReview(argv) {
         allowTools: allowTools.length > 0 ? allowTools : undefined,
         allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
         denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+        secretEnvVars: secretEnvVars.length > 0 ? secretEnvVars : undefined,
         allowRemote: Boolean(options["allow-remote"]),
         allowAskUser: Boolean(options["allow-ask-user"]),
+        allowAutoUpdate: Boolean(options["allow-auto-update"]),
+        sessionName,
         noCustomInstructions: Boolean(options["no-custom-instructions"]),
         shareMarkdown: Boolean(options.share) || Boolean(options["share-path"]),
         shareMarkdownPath: options["share-path"] ?? null,
@@ -978,7 +1029,9 @@ async function handleTask(argv) {
       "allow-tool",
       "allow-url",
       "deny-url",
-      "attachment"
+      "attachment",
+      "secret-env",
+      "session-name"
     ],
     booleanOptions: [
       "json",
@@ -991,7 +1044,8 @@ async function handleTask(argv) {
       "share",
       "share-gist",
       "allow-remote",
-      "allow-ask-user"
+      "allow-ask-user",
+      "allow-auto-update"
     ],
     aliasMap: {
       m: "model"
@@ -1043,6 +1097,15 @@ async function handleTask(argv) {
   // A / 0.7.0 — privacy escape hatches. Default is hardened.
   const allowRemote = Boolean(options["allow-remote"]);
   const allowAskUser = Boolean(options["allow-ask-user"]);
+  // E1 / 0.8.0 — secret env vars scrubbed from shell+MCP envs.
+  const secretEnvVars = parseCommaSeparatedList(options["secret-env"]);
+  // E2 / 0.8.0 — escape hatch for the always-on --no-auto-update default.
+  const allowAutoUpdate = Boolean(options["allow-auto-update"]);
+  // E3 / 0.8.0 — user override for the auto-generated session name.
+  const sessionName =
+    typeof options["session-name"] === "string" && options["session-name"].trim()
+      ? options["session-name"].trim()
+      : null;
   const prompt = readTaskPrompt(cwd, options, positionals);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);
@@ -1081,9 +1144,12 @@ async function handleTask(argv) {
       allowTools,
       allowUrls,
       denyUrls,
+      secretEnvVars,
       attachments,
       allowRemote,
-      allowAskUser
+      allowAskUser,
+      allowAutoUpdate,
+      sessionName
     });
     const { payload } = enqueueBackgroundTask(cwd, job, request);
     outputCommandResult({ ...payload, jobId: job.id, title: job.title }, renderQueuedTaskLaunch({ ...payload, jobId: job.id, title: job.title }), options.json);
@@ -1114,9 +1180,12 @@ async function handleTask(argv) {
         allowTools: allowTools.length > 0 ? allowTools : undefined,
         allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
         denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+        secretEnvVars: secretEnvVars.length > 0 ? secretEnvVars : undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
         allowRemote,
         allowAskUser,
+        allowAutoUpdate,
+        sessionName,
         onProgress: progress
       }),
     { json: options.json }
@@ -1138,9 +1207,15 @@ async function executePlanRun(request) {
     throw new Error("Provide a prompt describing what to plan.");
   }
 
+  // E3 / 0.8.0 — user-supplied --session-name overrides the auto-generated
+  // `copilot-task plan: <excerpt>` so plans can be located by name later.
+  const planSessionName = request.sessionName?.trim()
+    ? request.sessionName.trim()
+    : buildPersistentTaskSessionName(`plan: ${request.prompt}`);
+
   const result = await runCopilotPrompt(workspaceRoot, {
     prompt: request.prompt,
-    sessionName: buildPersistentTaskSessionName(`plan: ${request.prompt}`),
+    sessionName: planSessionName,
     model: request.model,
     effort: request.effort,
     allowAllTools: true,
@@ -1155,8 +1230,10 @@ async function executePlanRun(request) {
     allowTools: Array.isArray(request.allowTools) ? request.allowTools : undefined,
     allowUrls: Array.isArray(request.allowUrls) ? request.allowUrls : undefined,
     denyUrls: Array.isArray(request.denyUrls) ? request.denyUrls : undefined,
+    secretEnvVars: Array.isArray(request.secretEnvVars) ? request.secretEnvVars : undefined,
     allowRemote: Boolean(request.allowRemote),
     allowAskUser: Boolean(request.allowAskUser),
+    allowAutoUpdate: Boolean(request.allowAutoUpdate),
     onProgress: request.onProgress
   });
 
@@ -1200,7 +1277,9 @@ async function handlePlan(argv) {
       "mcp-config",
       "allow-tool",
       "allow-url",
-      "deny-url"
+      "deny-url",
+      "secret-env",
+      "session-name"
     ],
     booleanOptions: [
       "json",
@@ -1208,7 +1287,8 @@ async function handlePlan(argv) {
       "share",
       "share-gist",
       "allow-remote",
-      "allow-ask-user"
+      "allow-ask-user",
+      "allow-auto-update"
     ],
     aliasMap: {
       m: "model"
@@ -1245,6 +1325,13 @@ async function handlePlan(argv) {
   // A / 0.7.0 — privacy escape hatches.
   const allowRemote = Boolean(options["allow-remote"]);
   const allowAskUser = Boolean(options["allow-ask-user"]);
+  // E / 0.8.0 — secret env scrub + auto-update opt-in + session-name override.
+  const secretEnvVars = parseCommaSeparatedList(options["secret-env"]);
+  const allowAutoUpdate = Boolean(options["allow-auto-update"]);
+  const sessionName =
+    typeof options["session-name"] === "string" && options["session-name"].trim()
+      ? options["session-name"].trim()
+      : null;
 
   if (!prompt) {
     throw new Error("Provide a prompt, a prompt file, or piped stdin describing what to plan.");
@@ -1278,8 +1365,11 @@ async function handlePlan(argv) {
       allowTools: allowTools.length > 0 ? allowTools : undefined,
       allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
       denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+      secretEnvVars: secretEnvVars.length > 0 ? secretEnvVars : undefined,
       allowRemote,
-      allowAskUser
+      allowAskUser,
+      allowAutoUpdate,
+      sessionName
     };
     const { payload } = enqueueBackgroundTask(cwd, job, request, {
       jobClass: "plan"
@@ -1309,8 +1399,11 @@ async function handlePlan(argv) {
         allowTools: allowTools.length > 0 ? allowTools : undefined,
         allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
         denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+        secretEnvVars: secretEnvVars.length > 0 ? secretEnvVars : undefined,
         allowRemote,
         allowAskUser,
+        allowAutoUpdate,
+        sessionName,
         onProgress: progress
       }),
     { json: options.json }
