@@ -486,6 +486,23 @@ export function buildCopilotArgs(options) {
     args.push("--allow-all-tools");
   }
 
+  // A / 0.7.0 — privacy + non-stalling defaults for non-interactive runs.
+  //   `--no-remote` disables remote control of the session from GitHub
+  //   web/mobile (privacy hardening — we're a local plugin, the user
+  //   never opted into a remote handoff).
+  //   `--no-ask-user` disables the `ask_user` tool so the agent doesn't
+  //   block waiting on a human while we're parsing JSONL with no stdin.
+  // Both are escape-hatch-able: `allowRemote` / `allowAskUser` suppress
+  // the corresponding `--no-*` flag (we don't emit a positive flag —
+  // Copilot's default *is* remote-on / ask-user-on, so suppressing our
+  // override is enough).
+  if (!options.allowRemote) {
+    args.push("--no-remote");
+  }
+  if (!options.allowAskUser) {
+    args.push("--no-ask-user");
+  }
+
   if (options.model) {
     args.push("--model", options.model);
   }
@@ -569,6 +586,51 @@ export function buildCopilotArgs(options) {
   if (Array.isArray(options.denyTools)) {
     for (const tool of options.denyTools) {
       args.push(`--deny-tool=${tool}`);
+    }
+  }
+
+  // B / 0.7.0 — symmetric allow/deny pass-through for tools and URLs.
+  //   Copilot's permission model: denial rules ALWAYS take precedence
+  //   over allow rules, even `--allow-all-tools` (verified in
+  //   `copilot help permissions` on CLI 1.0.52). So even on a review
+  //   where `denyTools` enforces `write,shell`, a user-supplied
+  //   `--allow-tool=shell` is a no-op against the baseline — the
+  //   read-only invariant survives at the Copilot level.
+  // Each value is forwarded as one `--allow-tool=<pat>` / `--allow-url=<pat>` /
+  // `--deny-url=<pat>` (space-less form, matching our existing
+  // `--deny-tool=<pat>` style).
+  if (Array.isArray(options.allowTools)) {
+    for (const pat of options.allowTools) {
+      if (typeof pat === "string" && pat.trim()) {
+        args.push(`--allow-tool=${pat.trim()}`);
+      }
+    }
+  }
+  if (Array.isArray(options.allowUrls)) {
+    for (const pat of options.allowUrls) {
+      if (typeof pat === "string" && pat.trim()) {
+        args.push(`--allow-url=${pat.trim()}`);
+      }
+    }
+  }
+  if (Array.isArray(options.denyUrls)) {
+    for (const pat of options.denyUrls) {
+      if (typeof pat === "string" && pat.trim()) {
+        args.push(`--deny-url=${pat.trim()}`);
+      }
+    }
+  }
+
+  // C / 0.7.0 — `--attachment <path>` pass-through (rescue only at the
+  // command layer; this builder accepts any caller). Copilot accepts the
+  // flag repeatedly. We do NOT validate file existence here — that's the
+  // command/companion layer's job, so a programmatic caller can pass a
+  // path that doesn't exist yet (e.g., a planned screenshot).
+  if (Array.isArray(options.attachments)) {
+    for (const attachment of options.attachments) {
+      if (typeof attachment === "string" && attachment.trim()) {
+        args.push("--attachment", attachment.trim());
+      }
     }
   }
 

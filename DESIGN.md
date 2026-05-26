@@ -204,6 +204,16 @@ Every deferred D-/U- item from the post-port menu is now closed. The five remain
 
 Future post-port discoveries (when Copilot CLI ships new flags or renames existing ones) should be appended below as a new dated bucket rather than mutating the closed entries above.
 
+### Polish bucket (0.7.0)
+
+A re-probe of `copilot --help` against Copilot CLI 1.0.52 (still the latest at 2026-05-26) found no new upstream flags — but the menu surfaced a list of *unused-but-available* flags that round out the plugin's coverage. Three buckets shipped together in 0.7.0:
+
+- **[x] A / 0.7.0** — Privacy + non-stalling defaults. `buildCopilotArgs` now always emits `--no-remote` and `--no-ask-user` for non-interactive runs. **Rationale:** the plugin is local — nobody opted into a remote handoff, and the agent shouldn't stall on `ask_user` when JSONL stdin is closed. Escape hatches `--allow-remote` and `--allow-ask-user` suppress the corresponding `--no-*` flag for users who deliberately want those behaviors back (e.g., long-running rescue sessions kept reachable from mobile, or workflows that explicitly *want* the agent to surface questions).
+- **[x] B / 0.7.0** — Symmetric allow/deny pass-through on **all four** agent commands: `--allow-tool <pats>`, `--allow-url <pats>`, `--deny-url <pats>`. Comma-list form parsed via existing `parseCommaSeparatedList`. Each entry forwards as a separate `--allow-tool=<pat>` / `--allow-url=<pat>` / `--deny-url=<pat>` to Copilot (space-less form matching our existing `--deny-tool=<pat>` style). **Invariant preserved at the Copilot CLI level:** per `copilot help permissions`, denial rules always take precedence over allow rules — including `--allow-all-tools`. So `--allow-tool=shell` on a review is a no-op against the baseline `--deny-tool=write,shell`. This is why B can ship on reviews too without violating the read-only contract from §2.1, contrary to D9's tighter rescue-only scope.
+- **[x] C / 0.7.0** — `--attachment <paths>` pass-through on `/copilot:rescue` only. Comma-separated list of file paths (resolved against cwd); each path validated to be an existing file at parse time so users get a clean error before Copilot is invoked. Not exposed on review/adversarial-review/plan — those operate on the diff or a prompt, not arbitrary inputs.
+
+Implementation gate: every flag was re-verified against `copilot --help` on the installed binary before code landed, following the standard from 0.3.1/0.4.0. All flag-emission logic lives in one place (`buildCopilotArgs` in `lib/copilot.mjs`); the companion's job is parsing + validation + threading. Unit tests in `companion-helpers.test.mjs` cover all three buckets (`buildCopilotArgs (A …)`, `buildCopilotArgs (B …)`, `buildCopilotArgs (C …)`, `parseAttachmentPaths`).
+
 ### Optional follow-ups — all shipped in 0.2.0
 
 - **[x] Cut a `0.1.1` patch release** — done. Tag `v0.1.1`, commit `028aa6e`. Exercised the new `bump-version` flow end-to-end.

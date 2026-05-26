@@ -222,12 +222,55 @@ The file write happens **after** the run completes, so the plugin's read-only co
 
 MCP flags are **not** exposed on `/copilot:review` and `/copilot:adversarial-review` — those commands keep their read-only contract by refusing to extend the tool surface at run time.
 
+### Permission pass-through (0.7.0)
+
+All four agent commands (`/copilot:review`, `/copilot:adversarial-review`, `/copilot:rescue`, `/copilot:plan`) accept symmetric allow/deny pass-through flags that route into Copilot's permission model. Each accepts a comma-separated list.
+
+| Flag | Notes |
+|---|---|
+| `--allow-tool <pats>` | Patterns the agent can use without prompting (e.g. `shell(git:*)`, `write`). Each entry forwards as a `--allow-tool=<pat>` to Copilot. |
+| `--allow-url <urls>` | URLs/domains the agent can access without prompting. Each entry forwards as a `--allow-url=<pat>`. |
+| `--deny-url <urls>` | URLs/domains the agent must not touch. Takes precedence over `--allow-url`. |
+
+```bash
+/copilot:rescue --allow-tool 'shell(npm:*)' rebuild and re-test
+/copilot:review --deny-url malicious.test
+/copilot:plan --allow-url docs.example.com plan the docs.example.com integration
+```
+
+Per [`copilot help permissions`](https://docs.github.com/en/copilot/how-tos/copilot-cli), **deny rules always win** — including over `--allow-all-tools`. So even on a review where the plugin enforces its baseline `--deny-tool=write,shell`, a user-supplied `--allow-tool=shell` is a no-op against that baseline. The read-only invariant survives at the Copilot CLI level.
+
+### Privacy & non-interactive defaults (0.7.0)
+
+Every non-interactive plugin run hardens two defaults vs. the bare `copilot -p ...`:
+
+| Default | What it does | Escape hatch |
+|---|---|---|
+| `--no-remote` | Disables remote control of the session from GitHub web/mobile. The plugin is local — nobody opted into a remote handoff. | `--allow-remote` |
+| `--no-ask-user` | Disables the `ask_user` tool so the agent doesn't stall waiting for human input while we're parsing JSONL with no stdin. | `--allow-ask-user` |
+
+```bash
+/copilot:task --allow-ask-user when you hit an unknown enum, please ask
+/copilot:rescue --allow-remote keep this session reachable from mobile
+```
+
+### Attachments (rescue only, 0.7.0)
+
+`/copilot:rescue` (and the underlying `task` companion command) accepts `--attachment <paths>` — a comma-separated list of files to attach to the initial prompt (images or native documents). Each path is validated at parse time: missing files and directories are rejected before Copilot is invoked.
+
+```bash
+/copilot:rescue --attachment ./error.png debug this stack trace
+/copilot:rescue --attachment ./a.png,./b.log triage these two artifacts
+```
+
+Not exposed on review/adversarial-review/plan — those flows operate on the diff or a prompt, not arbitrary attachments.
+
 ## How it works
 
 The plugin wraps the GitHub Copilot CLI in non-interactive mode:
 
 ```
-copilot -p "<prompt>" --output-format json --allow-all-tools [--model <m>] [--effort <e>] [--resume=<id>] [--name <session-name>] [--plan|--autopilot] [--share[=path]|--share-gist] [--add-github-mcp-tool <t>] [--additional-mcp-config <json|@file>]
+copilot -p "<prompt>" --output-format json --allow-all-tools --no-remote --no-ask-user [--model <m>] [--effort <e>] [--resume=<id>] [--name <session-name>] [--plan|--autopilot] [--share[=path]|--share-gist] [--add-github-mcp-tool <t>] [--additional-mcp-config <json|@file>] [--allow-tool=<p>] [--allow-url=<p>] [--deny-url=<p>] [--attachment <path>]
 ```
 
 It parses the JSONL event stream (`assistant.message`, `assistant.turn_end`, `result`, ...) to surface progress, capture the final answer, and record the Copilot `sessionId` for later resume.

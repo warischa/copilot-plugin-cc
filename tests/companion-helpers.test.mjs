@@ -11,6 +11,7 @@ import path from "node:path";
 
 import {
   getJobKindLabel,
+  parseAttachmentPaths,
   parseCommaSeparatedList,
   REVIEW_BASELINE_DENY_TOOLS
 } from "../plugins/copilot/scripts/copilot-companion.mjs";
@@ -164,7 +165,7 @@ describe("D3 detectInstructionsFiles", () => {
 });
 
 describe("buildCopilotArgs (D5+D6+D8)", () => {
-  it("baseline contains JSON output, no-color, no-auto-update, allow-all-tools", () => {
+  it("baseline contains JSON output, no-color, no-auto-update, allow-all-tools, and 0.7.0 privacy defaults", () => {
     const args = buildCopilotArgs({ prompt: "hi" });
     assert.deepEqual(args, [
       "-p",
@@ -173,7 +174,9 @@ describe("buildCopilotArgs (D5+D6+D8)", () => {
       "json",
       "--no-color",
       "--no-auto-update",
-      "--allow-all-tools"
+      "--allow-all-tools",
+      "--no-remote",
+      "--no-ask-user"
     ]);
   });
 
@@ -343,5 +346,156 @@ describe("parseCommaSeparatedList (D9 helper)", () => {
 
   it("flattens arrays via join (for last-write-wins inputs upstream)", () => {
     assert.deepEqual(parseCommaSeparatedList(["a,b", "c"]), ["a", "b", "c"]);
+  });
+});
+
+describe("buildCopilotArgs (A privacy defaults / 0.7.0)", () => {
+  it("emits --no-remote and --no-ask-user by default", () => {
+    const args = buildCopilotArgs({ prompt: "x" });
+    assert.ok(args.includes("--no-remote"));
+    assert.ok(args.includes("--no-ask-user"));
+  });
+
+  it("allowRemote suppresses --no-remote but keeps --no-ask-user", () => {
+    const args = buildCopilotArgs({ prompt: "x", allowRemote: true });
+    assert.ok(!args.includes("--no-remote"));
+    assert.ok(args.includes("--no-ask-user"));
+  });
+
+  it("allowAskUser suppresses --no-ask-user but keeps --no-remote", () => {
+    const args = buildCopilotArgs({ prompt: "x", allowAskUser: true });
+    assert.ok(args.includes("--no-remote"));
+    assert.ok(!args.includes("--no-ask-user"));
+  });
+
+  it("both escape hatches together suppress both --no-* flags", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      allowRemote: true,
+      allowAskUser: true
+    });
+    assert.ok(!args.includes("--no-remote"));
+    assert.ok(!args.includes("--no-ask-user"));
+  });
+});
+
+describe("buildCopilotArgs (B allow/deny tool/url / 0.7.0)", () => {
+  it("allowTools emits one --allow-tool=<pat> per entry", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      allowTools: ["shell(git:*)", "write"]
+    });
+    assert.ok(args.includes("--allow-tool=shell(git:*)"));
+    assert.ok(args.includes("--allow-tool=write"));
+  });
+
+  it("allowUrls emits one --allow-url=<pat> per entry", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      allowUrls: ["github.com", "https://*.example.com"]
+    });
+    assert.ok(args.includes("--allow-url=github.com"));
+    assert.ok(args.includes("--allow-url=https://*.example.com"));
+  });
+
+  it("denyUrls emits one --deny-url=<pat> per entry", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      denyUrls: ["malicious.test"]
+    });
+    assert.ok(args.includes("--deny-url=malicious.test"));
+  });
+
+  it("blank or whitespace-only entries are skipped for all three lists", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      allowTools: ["write", "", "   "],
+      allowUrls: ["a.com", null, undefined],
+      denyUrls: ["", "b.com"]
+    });
+    assert.equal(args.filter((a) => a.startsWith("--allow-tool=")).length, 1);
+    assert.equal(args.filter((a) => a.startsWith("--allow-url=")).length, 1);
+    assert.equal(args.filter((a) => a.startsWith("--deny-url=")).length, 1);
+  });
+
+  it("defaults emit no allow/deny tool/url flags", () => {
+    const args = buildCopilotArgs({ prompt: "x" });
+    assert.ok(!args.some((a) => a.startsWith("--allow-tool=")));
+    assert.ok(!args.some((a) => a.startsWith("--allow-url=")));
+    assert.ok(!args.some((a) => a.startsWith("--deny-url=")));
+  });
+});
+
+describe("buildCopilotArgs (C attachments / 0.7.0)", () => {
+  it("attachments emits one --attachment <path> per entry", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      attachments: ["/tmp/a.png", "/tmp/b.log"]
+    });
+    const flagIndexes = args
+      .map((arg, idx) => (arg === "--attachment" ? idx : -1))
+      .filter((idx) => idx !== -1);
+    assert.equal(flagIndexes.length, 2);
+    assert.equal(args[flagIndexes[0] + 1], "/tmp/a.png");
+    assert.equal(args[flagIndexes[1] + 1], "/tmp/b.log");
+  });
+
+  it("blank entries are skipped", () => {
+    const args = buildCopilotArgs({
+      prompt: "x",
+      attachments: ["/tmp/a.png", "", "   ", null]
+    });
+    assert.equal(args.filter((a) => a === "--attachment").length, 1);
+  });
+
+  it("default emits no --attachment", () => {
+    const args = buildCopilotArgs({ prompt: "x" });
+    assert.ok(!args.includes("--attachment"));
+  });
+});
+
+describe("parseAttachmentPaths (C helper / 0.7.0)", () => {
+  let repoRoot;
+  let fileA;
+  let fileB;
+  let subdir;
+
+  before(() => {
+    repoRoot = mkRepo("attachments");
+    fileA = path.join(repoRoot, "a.png");
+    fileB = path.join(repoRoot, "b.log");
+    subdir = path.join(repoRoot, "sub");
+    touch(fileA);
+    touch(fileB);
+    fs.mkdirSync(subdir, { recursive: true });
+  });
+
+  it("returns [] for null/empty input", () => {
+    assert.deepEqual(parseAttachmentPaths(undefined, repoRoot), []);
+    assert.deepEqual(parseAttachmentPaths("", repoRoot), []);
+  });
+
+  it("resolves comma-separated paths against cwd and returns absolute paths", () => {
+    const result = parseAttachmentPaths("a.png,b.log", repoRoot);
+    assert.deepEqual(result, [fileA, fileB]);
+  });
+
+  it("accepts absolute paths verbatim", () => {
+    const result = parseAttachmentPaths(fileA, repoRoot);
+    assert.deepEqual(result, [fileA]);
+  });
+
+  it("throws when a path does not exist", () => {
+    assert.throws(
+      () => parseAttachmentPaths("missing.png", repoRoot),
+      /--attachment path not found: missing\.png/
+    );
+  });
+
+  it("throws when a path is a directory", () => {
+    assert.throws(
+      () => parseAttachmentPaths("sub", repoRoot),
+      /--attachment must be a file, got a directory: sub/
+    );
   });
 });

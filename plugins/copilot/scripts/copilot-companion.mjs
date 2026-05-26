@@ -72,10 +72,10 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/copilot-companion.mjs setup [--json]",
-      "  node scripts/copilot-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--share[=<path>]|--share-path <path>] [--share-gist]",
-      "  node scripts/copilot-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--no-custom-instructions] [--share[=<path>]|--share-path <path>] [--share-gist] [focus ...]",
-      "  node scripts/copilot-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--autopilot [--max-autopilot-continues <N>]] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [prompt]",
-      "  node scripts/copilot-companion.mjs plan [--background] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [prompt]",
+      "  node scripts/copilot-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--share[=<path>]|--share-path <path>] [--share-gist] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--allow-remote] [--allow-ask-user]",
+      "  node scripts/copilot-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model>] [--no-custom-instructions] [--share[=<path>]|--share-path <path>] [--share-gist] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--allow-remote] [--allow-ask-user] [focus ...]",
+      "  node scripts/copilot-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--autopilot [--max-autopilot-continues <N>]] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--attachment <paths>] [--allow-remote] [--allow-ask-user] [prompt]",
+      "  node scripts/copilot-companion.mjs plan [--background] [--model <model>] [--effort <none|low|medium|high|xhigh|max>] [--share[=<path>]|--share-path <path>] [--share-gist] [--mcp-tool <names>] [--mcp-config <json|@file>] [--allow-tool <pats>] [--allow-url <urls>] [--deny-url <urls>] [--allow-remote] [--allow-ask-user] [prompt]",
       "  node scripts/copilot-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/copilot-companion.mjs result [job-id] [--json]",
       "  node scripts/copilot-companion.mjs cancel [job-id] [--json]"
@@ -116,6 +116,35 @@ export function parseCommaSeparatedList(value) {
       seen.add(trimmed);
       out.push(trimmed);
     }
+  }
+  return out;
+}
+
+// C / 0.7.0 — split a CLI value into validated file paths for
+// `--attachment`. Accepts comma-separated forms like
+// `--attachment a.png,b.log`. Each entry must resolve to an existing
+// file under `cwd`; directories and missing paths throw. We resolve
+// to absolute paths so Copilot's own path-permission check sees a
+// stable value regardless of where the child is spawned from.
+export function parseAttachmentPaths(value, cwd, options = {}) {
+  const entries = parseCommaSeparatedList(value);
+  if (entries.length === 0) {
+    return [];
+  }
+  const statSync = options.statSync ?? fs.statSync;
+  const out = [];
+  for (const entry of entries) {
+    const absolute = path.resolve(cwd, entry);
+    let stat;
+    try {
+      stat = statSync(absolute);
+    } catch (err) {
+      throw new Error(`--attachment path not found: ${entry}`);
+    }
+    if (!stat.isFile()) {
+      throw new Error(`--attachment must be a file, got a directory: ${entry}`);
+    }
+    out.push(absolute);
   }
   return out;
 }
@@ -319,6 +348,11 @@ async function executeReviewRun(request) {
     allowAllTools: true,
     denyTools: buildReviewDenyTools(request.denyTools),
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
+    allowTools: Array.isArray(request.allowTools) ? request.allowTools : undefined,
+    allowUrls: Array.isArray(request.allowUrls) ? request.allowUrls : undefined,
+    denyUrls: Array.isArray(request.denyUrls) ? request.denyUrls : undefined,
+    allowRemote: Boolean(request.allowRemote),
+    allowAskUser: Boolean(request.allowAskUser),
     shareMarkdown: Boolean(request.shareMarkdown),
     shareMarkdownPath: request.shareMarkdownPath ?? null,
     shareGist: Boolean(request.shareGist),
@@ -382,6 +416,11 @@ async function executeAdversarialReviewRun(request) {
     allowAllTools: true,
     denyTools: buildReviewDenyTools(request.denyTools),
     addDirs: Array.isArray(request.addDirs) ? request.addDirs : undefined,
+    allowTools: Array.isArray(request.allowTools) ? request.allowTools : undefined,
+    allowUrls: Array.isArray(request.allowUrls) ? request.allowUrls : undefined,
+    denyUrls: Array.isArray(request.denyUrls) ? request.denyUrls : undefined,
+    allowRemote: Boolean(request.allowRemote),
+    allowAskUser: Boolean(request.allowAskUser),
     noCustomInstructions: Boolean(request.noCustomInstructions),
     shareMarkdown: Boolean(request.shareMarkdown),
     shareMarkdownPath: request.shareMarkdownPath ?? null,
@@ -469,6 +508,12 @@ async function executeTaskRun(request) {
     shareGist: Boolean(request.shareGist),
     addGithubMcpTools: Array.isArray(request.addGithubMcpTools) ? request.addGithubMcpTools : undefined,
     additionalMcpConfigs: Array.isArray(request.additionalMcpConfigs) ? request.additionalMcpConfigs : undefined,
+    allowTools: Array.isArray(request.allowTools) ? request.allowTools : undefined,
+    allowUrls: Array.isArray(request.allowUrls) ? request.allowUrls : undefined,
+    denyUrls: Array.isArray(request.denyUrls) ? request.denyUrls : undefined,
+    attachments: Array.isArray(request.attachments) ? request.attachments : undefined,
+    allowRemote: Boolean(request.allowRemote),
+    allowAskUser: Boolean(request.allowAskUser),
     onProgress: request.onProgress
   });
 
@@ -588,7 +633,13 @@ function buildTaskRequest({
   shareMarkdownPath = null,
   shareGist = false,
   addGithubMcpTools = null,
-  additionalMcpConfigs = null
+  additionalMcpConfigs = null,
+  allowTools = null,
+  allowUrls = null,
+  denyUrls = null,
+  attachments = null,
+  allowRemote = false,
+  allowAskUser = false
 }) {
   return {
     cwd,
@@ -615,7 +666,17 @@ function buildTaskRequest({
     additionalMcpConfigs:
       Array.isArray(additionalMcpConfigs) && additionalMcpConfigs.length > 0
         ? [...additionalMcpConfigs]
-        : undefined
+        : undefined,
+    allowTools:
+      Array.isArray(allowTools) && allowTools.length > 0 ? [...allowTools] : undefined,
+    allowUrls:
+      Array.isArray(allowUrls) && allowUrls.length > 0 ? [...allowUrls] : undefined,
+    denyUrls:
+      Array.isArray(denyUrls) && denyUrls.length > 0 ? [...denyUrls] : undefined,
+    attachments:
+      Array.isArray(attachments) && attachments.length > 0 ? [...attachments] : undefined,
+    allowRemote: Boolean(allowRemote),
+    allowAskUser: Boolean(allowAskUser)
   };
 }
 
@@ -753,8 +814,25 @@ function enqueueBackgroundTask(cwd, job, request, options = {}) {
 
 async function handleReview(argv) {
   const { options: rawOptions } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "cwd", "share-path"],
-    booleanOptions: ["json", "background", "wait", "share", "share-gist"],
+    valueOptions: [
+      "base",
+      "scope",
+      "model",
+      "cwd",
+      "share-path",
+      "allow-tool",
+      "allow-url",
+      "deny-url"
+    ],
+    booleanOptions: [
+      "json",
+      "background",
+      "wait",
+      "share",
+      "share-gist",
+      "allow-remote",
+      "allow-ask-user"
+    ],
     aliasMap: {
       m: "model"
     }
@@ -770,6 +848,10 @@ async function handleReview(argv) {
     base: options.base,
     scope: options.scope
   });
+
+  const allowTools = parseCommaSeparatedList(options["allow-tool"]);
+  const allowUrls = parseCommaSeparatedList(options["allow-url"]);
+  const denyUrls = parseCommaSeparatedList(options["deny-url"]);
 
   const job = createCompanionJob({
     prefix: "review",
@@ -790,6 +872,11 @@ async function handleReview(argv) {
         model: options.model,
         denyTools: Array.isArray(options.denyTools) ? options.denyTools : undefined,
         addDirs: Array.isArray(options.addDirs) ? options.addDirs : undefined,
+        allowTools: allowTools.length > 0 ? allowTools : undefined,
+        allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
+        denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+        allowRemote: Boolean(options["allow-remote"]),
+        allowAskUser: Boolean(options["allow-ask-user"]),
         shareMarkdown: Boolean(options.share) || Boolean(options["share-path"]),
         shareMarkdownPath: options["share-path"] ?? null,
         shareGist: Boolean(options["share-gist"]),
@@ -801,14 +888,25 @@ async function handleReview(argv) {
 
 async function handleAdversarialReview(argv) {
   const { options: rawOptions, positionals } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "cwd", "share-path"],
+    valueOptions: [
+      "base",
+      "scope",
+      "model",
+      "cwd",
+      "share-path",
+      "allow-tool",
+      "allow-url",
+      "deny-url"
+    ],
     booleanOptions: [
       "json",
       "background",
       "wait",
       "no-custom-instructions",
       "share",
-      "share-gist"
+      "share-gist",
+      "allow-remote",
+      "allow-ask-user"
     ],
     aliasMap: {
       m: "model"
@@ -836,6 +934,10 @@ async function handleAdversarialReview(argv) {
     summary: `Adversarial review ${target.label}${userFocus ? ` — focus: ${userFocus}` : ""}`
   });
 
+  const allowTools = parseCommaSeparatedList(options["allow-tool"]);
+  const allowUrls = parseCommaSeparatedList(options["allow-url"]);
+  const denyUrls = parseCommaSeparatedList(options["deny-url"]);
+
   await runForegroundCommand(
     job,
     (progress) =>
@@ -847,6 +949,11 @@ async function handleAdversarialReview(argv) {
         userFocus,
         denyTools: Array.isArray(options.denyTools) ? options.denyTools : undefined,
         addDirs: Array.isArray(options.addDirs) ? options.addDirs : undefined,
+        allowTools: allowTools.length > 0 ? allowTools : undefined,
+        allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
+        denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+        allowRemote: Boolean(options["allow-remote"]),
+        allowAskUser: Boolean(options["allow-ask-user"]),
         noCustomInstructions: Boolean(options["no-custom-instructions"]),
         shareMarkdown: Boolean(options.share) || Boolean(options["share-path"]),
         shareMarkdownPath: options["share-path"] ?? null,
@@ -867,7 +974,11 @@ async function handleTask(argv) {
       "max-autopilot-continues",
       "share-path",
       "mcp-tool",
-      "mcp-config"
+      "mcp-config",
+      "allow-tool",
+      "allow-url",
+      "deny-url",
+      "attachment"
     ],
     booleanOptions: [
       "json",
@@ -878,7 +989,9 @@ async function handleTask(argv) {
       "background",
       "autopilot",
       "share",
-      "share-gist"
+      "share-gist",
+      "allow-remote",
+      "allow-ask-user"
     ],
     aliasMap: {
       m: "model"
@@ -919,6 +1032,17 @@ async function handleTask(argv) {
     typeof options["mcp-config"] === "string" && options["mcp-config"].trim()
       ? [options["mcp-config"].trim()]
       : [];
+  // B / 0.7.0 — symmetric allow/deny CLI pass-through. Comma-list form.
+  const allowTools = parseCommaSeparatedList(options["allow-tool"]);
+  const allowUrls = parseCommaSeparatedList(options["allow-url"]);
+  const denyUrls = parseCommaSeparatedList(options["deny-url"]);
+  // C / 0.7.0 — `--attachment` validated to existing files. Rescue is the
+  // only command markdown that exposes this; the companion accepts it
+  // here because rescue forwards to `task`. Resolved to absolute paths.
+  const attachments = parseAttachmentPaths(options.attachment, cwd);
+  // A / 0.7.0 — privacy escape hatches. Default is hardened.
+  const allowRemote = Boolean(options["allow-remote"]);
+  const allowAskUser = Boolean(options["allow-ask-user"]);
   const prompt = readTaskPrompt(cwd, options, positionals);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);
@@ -953,7 +1077,13 @@ async function handleTask(argv) {
       shareMarkdownPath,
       shareGist,
       addGithubMcpTools,
-      additionalMcpConfigs
+      additionalMcpConfigs,
+      allowTools,
+      allowUrls,
+      denyUrls,
+      attachments,
+      allowRemote,
+      allowAskUser
     });
     const { payload } = enqueueBackgroundTask(cwd, job, request);
     outputCommandResult({ ...payload, jobId: job.id, title: job.title }, renderQueuedTaskLaunch({ ...payload, jobId: job.id, title: job.title }), options.json);
@@ -981,6 +1111,12 @@ async function handleTask(argv) {
         shareGist,
         addGithubMcpTools: addGithubMcpTools.length > 0 ? addGithubMcpTools : undefined,
         additionalMcpConfigs: additionalMcpConfigs.length > 0 ? additionalMcpConfigs : undefined,
+        allowTools: allowTools.length > 0 ? allowTools : undefined,
+        allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
+        denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+        attachments: attachments.length > 0 ? attachments : undefined,
+        allowRemote,
+        allowAskUser,
         onProgress: progress
       }),
     { json: options.json }
@@ -1016,6 +1152,11 @@ async function executePlanRun(request) {
     shareGist: Boolean(request.shareGist),
     addGithubMcpTools: Array.isArray(request.addGithubMcpTools) ? request.addGithubMcpTools : undefined,
     additionalMcpConfigs: Array.isArray(request.additionalMcpConfigs) ? request.additionalMcpConfigs : undefined,
+    allowTools: Array.isArray(request.allowTools) ? request.allowTools : undefined,
+    allowUrls: Array.isArray(request.allowUrls) ? request.allowUrls : undefined,
+    denyUrls: Array.isArray(request.denyUrls) ? request.denyUrls : undefined,
+    allowRemote: Boolean(request.allowRemote),
+    allowAskUser: Boolean(request.allowAskUser),
     onProgress: request.onProgress
   });
 
@@ -1056,9 +1197,19 @@ async function handlePlan(argv) {
       "prompt-file",
       "share-path",
       "mcp-tool",
-      "mcp-config"
+      "mcp-config",
+      "allow-tool",
+      "allow-url",
+      "deny-url"
     ],
-    booleanOptions: ["json", "background", "share", "share-gist"],
+    booleanOptions: [
+      "json",
+      "background",
+      "share",
+      "share-gist",
+      "allow-remote",
+      "allow-ask-user"
+    ],
     aliasMap: {
       m: "model"
     }
@@ -1087,6 +1238,13 @@ async function handlePlan(argv) {
     typeof options["mcp-config"] === "string" && options["mcp-config"].trim()
       ? [options["mcp-config"].trim()]
       : [];
+  // B / 0.7.0 — symmetric allow/deny pass-through.
+  const allowTools = parseCommaSeparatedList(options["allow-tool"]);
+  const allowUrls = parseCommaSeparatedList(options["allow-url"]);
+  const denyUrls = parseCommaSeparatedList(options["deny-url"]);
+  // A / 0.7.0 — privacy escape hatches.
+  const allowRemote = Boolean(options["allow-remote"]);
+  const allowAskUser = Boolean(options["allow-ask-user"]);
 
   if (!prompt) {
     throw new Error("Provide a prompt, a prompt file, or piped stdin describing what to plan.");
@@ -1116,7 +1274,12 @@ async function handlePlan(argv) {
       shareMarkdownPath,
       shareGist,
       addGithubMcpTools: addGithubMcpTools.length > 0 ? addGithubMcpTools : undefined,
-      additionalMcpConfigs: additionalMcpConfigs.length > 0 ? additionalMcpConfigs : undefined
+      additionalMcpConfigs: additionalMcpConfigs.length > 0 ? additionalMcpConfigs : undefined,
+      allowTools: allowTools.length > 0 ? allowTools : undefined,
+      allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
+      denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+      allowRemote,
+      allowAskUser
     };
     const { payload } = enqueueBackgroundTask(cwd, job, request, {
       jobClass: "plan"
@@ -1143,6 +1306,11 @@ async function handlePlan(argv) {
         shareGist,
         addGithubMcpTools: addGithubMcpTools.length > 0 ? addGithubMcpTools : undefined,
         additionalMcpConfigs: additionalMcpConfigs.length > 0 ? additionalMcpConfigs : undefined,
+        allowTools: allowTools.length > 0 ? allowTools : undefined,
+        allowUrls: allowUrls.length > 0 ? allowUrls : undefined,
+        denyUrls: denyUrls.length > 0 ? denyUrls : undefined,
+        allowRemote,
+        allowAskUser,
         onProgress: progress
       }),
     { json: options.json }
