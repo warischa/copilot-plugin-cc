@@ -1,6 +1,23 @@
-# Session handoff — 2026-05-25 (through `v0.6.0`)
+# Session handoff — 2026-05-26 (through `v0.7.0`)
 
 ## Current task and status
+
+**Status:** Done. The 0.7.0 session shipped a polish bucket on top of the 0.6.0 menu completion:
+
+- `v0.7.0` — polish bucket (A+B+C): privacy defaults (`--no-remote` + `--no-ask-user`) with escape hatches, symmetric `--allow-tool` / `--allow-url` / `--deny-url` pass-through on all four agent commands, `--attachment <paths>` on rescue.
+
+Working tree was clean on `main` at v0.6.0 (commit `cc90379`) before the session started. **172 tests pass + 1 skipped** (was 156 → +17 new tests for A privacy defaults, B allow/deny tool/url, C attachments + `parseAttachmentPaths` helper). Integration test is still opt-in via `COPILOT_INTEGRATION=1`.
+
+Last actions (in order):
+1. Re-probed `copilot --help` against Copilot CLI 1.0.52 — same version as 0.6.0 ship, no upstream drift. Found 20-ish documented flags the plugin never wired, triaged them into Tier 1 (clearly useful), Tier 2 (review-tightening), Tier 3 (niche), Tier 4 (N/A).
+2. Confirmed via `gh issue list` that there are zero user-reported issues to triage.
+3. Decision gate via `AskUserQuestion`: user picked privacy defaults default-on (with escape hatches), allow/deny tool/url on all four agent commands, attachment on rescue only.
+4. Implemented A+B+C with 17 new unit tests; landed as commit `27ccf4d` "Polish bucket — privacy defaults, allow/deny tool/url, attachment (A+B+C)".
+5. Real end-to-end smoke tests against the live binary: bare `task` with new privacy defaults returned `OK` exit 0; `--allow-url github.com --deny-url malicious.test` accepted by Copilot; `--attachment` flag verified to wire through (Copilot rejected a `.txt` with its own "must be an image or native document" error, proving the arg parsed and forwarded).
+6. Cut `v0.7.0` via `npm run publish-release -- 0.7.0`: manifest-only commit `db15f28` "Release 0.7.0", tag `v0.7.0`, pushed, GitHub Release created at https://github.com/warischa/copilot-plugin-cc/releases/tag/v0.7.0.
+7. CI run `26428105896` completed `success` across all 4 matrix jobs (Node 20 ubuntu, Node 22 ubuntu/macos/windows).
+
+## Previous session handoff — 2026-05-25 (through `v0.6.0`)
 
 **Status:** Done. The 0.6.0 session closed every remaining item on the post-port menu (DESIGN.md §5) in one batch:
 
@@ -14,6 +31,59 @@ Last actions (in order):
 3. Real end-to-end smoke test against the live binary: `node ...companion.mjs task --share-path /tmp/copilot-smoke-0.6.0.md --mcp-tool issues "Reply with the single word OK"` returned `OK`, exit 0, and the markdown transcript landed at the requested path (437B, valid content). Both new feature buckets verified end-to-end before tagging.
 4. Cut `v0.6.0` end-to-end via `npm run publish-release -- 0.6.0`: manifest-only commit `73456d3` "Release 0.6.0", tag `v0.6.0`, push to `origin/main`, GitHub Release created at https://github.com/warischa/copilot-plugin-cc/releases/tag/v0.6.0.
 5. CI run `26380250309` completed `success` across all 4 matrix jobs (Node 20 ubuntu, Node 22 ubuntu/macos/windows).
+
+## What this 0.7.0 session shipped
+
+One bucket, one release. Same flag-verification standard as 0.6.0: every new flag was matched against `copilot --help` on the installed binary (1.0.52) before code landed. The post-port menu was already empty at 0.6.0 — 0.7.0 came from a deliberate *coverage* probe (what *does* Copilot expose that we haven't wired?), not from a bug or new upstream feature.
+
+### A — privacy + non-stalling defaults
+
+`buildCopilotArgs` now always emits `--no-remote` and `--no-ask-user` for non-interactive runs:
+
+- `--no-remote` — disables remote control of the session from GitHub web/mobile. The plugin is local; nobody opted into a remote handoff.
+- `--no-ask-user` — disables the `ask_user` tool so the agent doesn't stall waiting for human input while we're parsing JSONL with no stdin.
+
+Both have escape hatches at the companion CLI: `--allow-remote` / `--allow-ask-user` suppress the corresponding `--no-*` flag. The plugin never emits a positive `--remote` / `--ask-user` — Copilot's CLI default *is* remote-on / ask-user-on, so just not emitting our override is enough.
+
+### B — symmetric allow/deny tool/url pass-through
+
+Three new flags on **all four** agent commands (`/copilot:review`, `/copilot:adversarial-review`, `/copilot:rescue`, `/copilot:plan`):
+
+- `--allow-tool <pats>` — comma list; each entry → one `--allow-tool=<pat>`. Patterns are Copilot's standard `shell(git push)`, `write`, `MyMCP(tool_name)` forms.
+- `--allow-url <urls>` — comma list; each entry → one `--allow-url=<pat>`.
+- `--deny-url <urls>` — comma list; each entry → one `--deny-url=<pat>`.
+
+**Why all four (vs D9's rescue+plan-only scope):** per `copilot help permissions`, denial rules always take precedence over allow rules — including over `--allow-all-tools`. So even on a review where the plugin enforces `--deny-tool=write,shell`, a user-supplied `--allow-tool=shell` is a no-op against the baseline. The read-only invariant survives at the Copilot CLI level. D9's tighter scope was justified for MCP because MCP servers can expose write/shell tools that aren't in the baseline deny list; allow-tool/url/deny-url operate on patterns that bottom out at the same deny-precedence guarantee. Documented in `buildCopilotArgs` inline so future readers don't re-litigate.
+
+### C — `--attachment <paths>` on rescue only
+
+Comma-separated list of file paths attached to the initial prompt (Copilot's native image / native-document support). Validated at parse time via the new `parseAttachmentPaths` helper:
+
+- Resolves each entry against `cwd` to an absolute path.
+- Throws on missing files (`--attachment path not found: <name>`).
+- Throws on directories (`--attachment must be a file, got a directory: <name>`).
+- Does **not** validate content type — that's Copilot's job (it rejects unsupported types like `.txt` with its own error message during run, which is also what proved the wiring in smoke testing).
+
+Exposed via `/copilot:rescue`'s argument-hint; the underlying `task` companion subcommand accepts it for the rescue subagent's forwarding path. Reviews and plans don't expose it.
+
+### End-to-end smoke tests against Copilot CLI 1.0.52
+
+Three live calls:
+
+1. **A:** `node ...companion.mjs task "Reply with exactly the single word OK and nothing else."` → `OK`, exit 0. Confirms the new privacy defaults don't break a baseline run.
+2. **B:** `node ...companion.mjs task --allow-url github.com --deny-url malicious.test "Reply with exactly the single word OK..."` → `OK`, exit 0. Confirms allow/deny URL flags accepted.
+3. **C (wiring proof):** `node ...companion.mjs task --attachment /tmp/copilot-smoke-0.7.0-attachment.txt "..."` → Copilot returned `--attachment file type not supported (must be an image or native document)`. That's Copilot's *own* error string, which proves: (a) our `parseAttachmentPaths` accepted the path, (b) `buildCopilotArgs` emitted the flag, (c) Copilot received it. A 1×1 PNG was also tried; Copilot started the session and got past flag parsing (turn started/turn ended cleanly) but couldn't produce a final message for that pixel-sized image — a Copilot-side image-pipeline limit, not a plugin bug.
+
+### Test count delta
+
+156 (pre-session) → **172** (post-session). 17 new tests in `companion-helpers.test.mjs`:
+
+- **4 for A** — defaults emit `--no-remote` + `--no-ask-user`; `allowRemote` suppresses only `--no-remote`; `allowAskUser` suppresses only `--no-ask-user`; both escape hatches together suppress both.
+- **5 for B** — `--allow-tool` per entry; `--allow-url` per entry; `--deny-url` per entry; blank/null entries skipped; defaults emit no flags.
+- **3 for C buildCopilotArgs** — per-entry `--attachment` emission; blank skip; default-empty.
+- **5 for `parseAttachmentPaths`** — null/empty; comma-list resolution to absolute paths; absolute-input passthrough; missing-path error; directory-rejection error.
+
+Plus the baseline `buildCopilotArgs` deepEqual test updated to include the new `--no-remote` / `--no-ask-user` flags. All green locally on Node 22 / macOS.
 
 ## Previous session handoff — 2026-05-24 (through `v0.5.0`)
 
@@ -252,19 +322,19 @@ The post-port menu (D-/U- items) is **fully closed as of 0.6.0**. What's still o
 
 For the next Claude Code session, in order:
 
-1. Skim `DESIGN.md` (§2 decisions, §4 gotchas, §5 status — including **Post-port review**, **Agentic upgrade**, and **Menu completion (0.6.0)** subsections). It's the authoritative state-of-the-plugin doc — this SESSION-HANDOFF.md is the timeline, DESIGN.md is the contract.
+1. Skim `DESIGN.md` (§2 decisions, §4 gotchas, §5 status — including **Post-port review**, **Agentic upgrade**, **Menu completion (0.6.0)**, and **Polish bucket (0.7.0)** subsections). It's the authoritative state-of-the-plugin doc — this SESSION-HANDOFF.md is the timeline, DESIGN.md is the contract.
 2. If the user asks to cut a release: run `npm run publish-release -- <new>` (one command — see `docs/RELEASE.md`). The wrapper handles bump-version + tests + commit + tag + push + GH release.
-3. If the user asks to extend further: the post-port menu is empty. Likely sources of new work are (a) Copilot CLI shipped a new flag we haven't ported (re-probe `copilot --help`), (b) a real user reported a bug, (c) the user wants a new feature bucket invented from scratch. There's no "obvious next" item to pull off the shelf.
-4. If `copilot` CLI changes: re-probe with `copilot -p "ping" --output-format json --allow-all-tools --no-color` and diff against `describeEvent()` in `lib/copilot.mjs`. The pure extractors (`extractTouchedFilePath`, `extractVersionLine`, `parseCmdKeyOutput`, `parseSecretToolOutput`, `detectInstructionsFiles`, `buildCopilotArgs`, `parseCommaSeparatedList`) are exported specifically to make this kind of drift catch-able with one test.
+3. If the user asks to extend further: the post-port menu is empty AND the polish bucket is empty. Likely sources of new work are (a) Copilot CLI shipped a new flag we haven't ported (re-probe `copilot --help`), (b) a real user reported a bug, (c) the user wants a new feature bucket invented from scratch. Tier 2 review-tightening flags (`--disable-builtin-mcps`, `--disable-mcp-server`, `--disallow-temp-dir`, `--available-tools`/`--excluded-tools`, `--enable-reasoning-summaries`) and Tier 3 niche flags (`--add-github-mcp-toolset`, `--agent`, `--log-dir`/`--log-level`, `--mode`, `--session-id`, `--connect`, `--plugin-dir`, `--bash-env`/`--no-bash-env`, `--experimental`/`--no-experimental`) are documented in the 0.7.0 probe analysis but were deliberately not shipped — they're shelfable items if asked for.
+4. If `copilot` CLI changes: re-probe with `copilot -p "ping" --output-format json --allow-all-tools --no-color` and diff against `describeEvent()` in `lib/copilot.mjs`. The pure extractors (`extractTouchedFilePath`, `extractVersionLine`, `parseCmdKeyOutput`, `parseSecretToolOutput`, `detectInstructionsFiles`, `buildCopilotArgs`, `parseCommaSeparatedList`, `parseAttachmentPaths`) are exported specifically to make this kind of drift catch-able with one test.
 5. **Cross-reference both** the codex-plugin-cc reference at `https://github.com/openai/codex-plugin-cc` AND the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices)) before designing a new feature. The codex pattern is the shape; Copilot's actual flags are the ground truth — and they don't always agree (see §5 Post-port review).
 
 ## Important context
 
 - This project still treats `openai/codex-plugin-cc` as its **conceptual source of truth** for architectural patterns, **but** the post-port review in 0.3.1/0.4.0/0.5.0/0.6.0 demonstrated that codex-era assumptions can mask real bugs. Always cross-check against the live Copilot CLI docs ([best practices](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices), [getting started](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started)) when porting a new feature. `copilot help <topic>` (especially `environment` and `permissions`) is the actual ground truth — the web docs lag.
 - The package.json name is `@claude-copilot/copilot-plugin-cc` and the marketplace owner is `Claude-Copilot` — these are org-style placeholders chosen during v1, deliberately not tied to a personal identity. The GitHub repo *is* under `warischa` (a personal account). See [DESIGN.md §2.7 "Project identity"](DESIGN.md).
-- **Tags shipped:** `v0.1.1`, `v0.2.0`, `v0.3.0`, `v0.3.1`, `v0.4.0`, `v0.5.0`, `v0.6.0`. Latest tag = latest release.
-- **Recent commits (newest first):** `73456d3` (Release 0.6.0), `b84371d` (Close post-port menu D2+D4+D7+D9+U3), `3642c9f` (Refresh SESSION-HANDOFF and DESIGN through v0.5.0), `060a5de` (Release 0.5.0), `d86a304` (D5+D6+D8), `e7e5bab` (Release 0.4.0), `aa1a7ad` (D1+D3+U1+U2), `2a9b85b` (Release 0.3.1), `ba39cd5` (B1+B2+B3), `1b7b64a` (Release 0.3.0).
-- **CI matrix (verified 2026-05-25):** 4 jobs — Node 20 on `ubuntu-latest`, Node 22 on `ubuntu-latest` / `macos-latest` / `windows-latest`. Node 20 is only checked on Linux; Node 22 catches OS-specific issues. If you ever edit `.github/workflows/ci.yml`, this is the shape to preserve unless deliberately widening it.
+- **Tags shipped:** `v0.1.1`, `v0.2.0`, `v0.3.0`, `v0.3.1`, `v0.4.0`, `v0.5.0`, `v0.6.0`, `v0.7.0`. Latest tag = latest release.
+- **Recent commits (newest first):** `db15f28` (Release 0.7.0), `27ccf4d` (Polish bucket — privacy defaults, allow/deny tool/url, attachment A+B+C), `cc90379` (Refresh SESSION-HANDOFF after v0.6.0 ship), `73456d3` (Release 0.6.0), `b84371d` (Close post-port menu D2+D4+D7+D9+U3), `3642c9f` (Refresh SESSION-HANDOFF and DESIGN through v0.5.0), `060a5de` (Release 0.5.0), `d86a304` (D5+D6+D8), `e7e5bab` (Release 0.4.0), `aa1a7ad` (D1+D3+U1+U2).
+- **CI matrix (verified 2026-05-26):** 4 jobs — Node 20 on `ubuntu-latest`, Node 22 on `ubuntu-latest` / `macos-latest` / `windows-latest`. Node 20 is only checked on Linux; Node 22 catches OS-specific issues. If you ever edit `.github/workflows/ci.yml`, this is the shape to preserve unless deliberately widening it.
 - Branch `main` is protected — no force-push, no deletion, linear history only. Routine commits and pushes are fine.
 - **Release workflow:** Single command — `npm run publish-release -- <version>`. Refuses on dirty tree or off-branch HEAD unless `--allow-dirty` / `--branch` is passed. See `docs/RELEASE.md`.
 - The `code-review-graph` build hook may regenerate `.code-review-graph/` at the repo root — it's in `.gitignore`.
