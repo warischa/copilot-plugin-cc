@@ -162,6 +162,8 @@ These are **not bugs** — they were scoped out. Pick up here if extending.
 - **Every `npm test` spends one Copilot API call.** `tests/integration.test.mjs` auto-skips when copilot isn't installed/authed, but on dev machines that *are* authed, the suite runs a real prompt every time (~14s, costs one Copilot turn). If this becomes friction, gate behind `COPILOT_INTEGRATION=1` in the test's `before()` block.
 - **Windows cmdkey target format is `copilot-cli/<api-url>:<github-account>`.** Verified on a real Windows host; `parseCmdKeyOutput` is tested against the verbatim line. GitHub Enterprise should work without changes — the regex matches `https://ghe.example.com:user` the same way.
 - **Test path assertions must mirror the implementation's `path` API, never hardcode separators.** `ensureAbsolutePath` uses `path.resolve`; a delegated test that asserted against `path.join` and a literal `/a/b` passed on macOS but failed on windows-latest/Node 22 (drive-letter prepend + backslashes). Caught by CI 2026-05-27, not by the local run. Rule for fixtures: build expectations with the same `path.resolve`/`path.join` the code uses, and never assert a hardcoded POSIX path. Recurrence of the 0.2.0 Windows path-fragility lesson — **CI (Node 20/22 × 3 OS) is the cross-platform gate, local macOS green is not sufficient.**
+- **Entry-point detection must use `fileURLToPath`, not `new URL(import.meta.url).pathname`.** The companion's `isEntryPoint` guard compares `path.resolve(process.argv[1])` against the module's own path. `.pathname` yields `/C:/...` on Windows and never matches the native `C:\...`, so `main()` never ran when the CLI was spawned on Windows — the whole plugin was silently broken there (exit 0, no output). Latent because the maintainer is on macOS and no test spawned the entry point until `tests/companion-cli.test.mjs`. Fixed in v0.8.1 (exported `isEntryPoint()` + `tests/entry-point.test.mjs`). Lesson: only an integration test that *spawns* the CLI can catch entry-point bugs — unit tests that import functions never will.
+- **`runCommand` uses `shell:true` on Windows** (required for `.cmd`/`.bat` shims like `copilot`/`git`/`npm`). Consequence for tests: a missing binary returns a non-zero exit with **no `ENOENT` error object**, and multi-statement inline `node -e "...; ..."` scripts get mangled by cmd.exe. Assert outcomes (error **or** non-zero status), and run multi-statement scripts from a temp file. `process.test.mjs` learned this on windows-latest (fixed 2026-05-27 / v0.8.1).
 
 ---
 
@@ -239,7 +241,7 @@ Implementation gate: same standard as 0.6.0/0.7.0 — every flag verified agains
 
 ### Test-coverage expansion (2026-05-27)
 
-Not a release — a test-hardening session run as a lead-agent-delegating-to-Copilot exercise. No version tag. 180 → 306 tests (+126), 0 fail, CI green on Node 20/22 × Linux/macOS/Windows.
+A two-wave test-hardening day run as a lead-agent-delegating-to-Copilot exercise. Wave 1 (unit coverage) carried no version tag; wave 2 (integration tier) surfaced a real Windows production bug and shipped as **v0.8.1**. 180 → 422 tests (+242), 0 fail, CI green on Node 20/22 × Linux/macOS/Windows.
 
 - **[x] Export event-stream parsers** — `describeEvent` + `captureFinalAnswer` made `export` in `lib/copilot.mjs` (additive, behavior-neutral) so the JSONL parser is directly unit-tested. `tests/event-stream.test.mjs` (16). See §2.9.
 - **[x] Cover 7 previously-untested `lib/` modules** — new files for `git` review-target resolution + `collectReviewContext`, `job-control`, `tracked-jobs`, `fs`, `prompts`, `workspace`. All written by delegated Copilot agents and verified against the suite before commit.
@@ -247,7 +249,10 @@ Not a release — a test-hardening session run as a lead-agent-delegating-to-Cop
 - **[x] Coverage workflow** — `node --test --experimental-test-coverage` is the measurement of record (test count ≠ coverage; it surfaced a silently-dropped task).
 - **[x] Model-routing A/B** — 1× vs 3× on `collectReviewContext`; the 3× model did not beat 1×. See §2.9.
 - **[x] Windows path-fragility fix** — `fs.test.mjs` `ensureAbsolutePath` (see §4).
-- **[ ] Integration tier (pending).** Orchestration surfaces remain low-coverage and need subprocess/integration harnesses, not unit tests: `copilot-companion.mjs` `main()` dispatch (~14%), `render.mjs` (~52%), `tracked-jobs.runTrackedJob`, `collectReviewContext` deeper branches, `process.mjs` (~33%).
+- **[x] Integration tier (wave 2 → v0.8.1).** 5 more files (`render-extra`, `process`, `tracked-jobs-runner`, `review-context-extra`, and the spawn-based `companion-cli`) + `entry-point`. Coverage: `render` 52→**100%**, `git` 38→**92%**, `tracked-jobs` 62→**95%**, `process` 33→51%, `copilot-companion` 14→24%. The spawn-based `companion-cli` integration test **found a real production bug** — `isEntryPoint` (see §4) — fixed and shipped in v0.8.1.
+- **[x] Flag re-probe.** Re-probed `copilot --help` against CLI 1.0.52: zero drift, nothing new to port; every unwired flag is the documented Tier 2/3 shelf.
+- **[x] Second model-routing A/B (hard task).** Routed the `companion-cli` integration test to Opus 4.6 (3×) against the 1× baseline: Opus was the slowest job with no quality margin; **1× remains the default** (see §2.9). The value came from the test *tier* (integration), not the model tier.
+- **[~] Remaining ceiling (intentional).** `copilot-companion.mjs` stays ~24% and `process.mjs` ~51% by design — the bulk needs the live `copilot` binary (review/task/plan/setup; that's what the opt-in `integration.test.mjs` is for) or kills process trees (`terminateProcessTree`). Out of scope for hermetic unit tests.
 
 ### Optional follow-ups — all shipped in 0.2.0
 

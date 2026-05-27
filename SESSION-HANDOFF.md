@@ -1,3 +1,53 @@
+# Session handoff — 2026-05-27 (wave 2) — integration-tier coverage + v0.8.1
+
+## Current task and status
+
+**Status:** Done. Same-day continuation of the test-coverage work below, culminating in the **v0.8.1** patch release. Closed both pending items from wave 1 (integration-tier coverage + Copilot flag re-probe), fixed a **real Windows production bug** the new integration test exposed, and shipped it.
+
+Suite **306 → 422 tests** (+116 this wave; 1 skipped, 0 fail). CI green on Node 20/22 × Linux/macOS/Windows. Released **v0.8.1** (commit `de130c8`, tag `v0.8.1`, GH release). Working tree clean.
+
+## What this wave shipped
+
+### Integration-tier coverage (6 new test files, +116)
+- `tests/render-extra.test.mjs` (50) — remaining render fns; `render.mjs` 52→**100%**. (Copilot, sonnet 1×)
+- `tests/process.test.mjs` (19) — `formatCommandFailure`/`binaryAvailable`/`runCommand`/`runCommandChecked`; `terminateProcessTree` excluded (unsafe in CI). `process.mjs` 33→51%. (Copilot, sonnet 1×)
+- `tests/tracked-jobs-runner.test.mjs` (18) — `runTrackedJob` lifecycle; `tracked-jobs.mjs` 62→**95%**. (Copilot, sonnet 1×)
+- `tests/review-context-extra.test.mjs` (11) — `collectReviewContext` deeper branches; `git.mjs` 38→**92%**. (Copilot, sonnet 1×)
+- `tests/companion-cli.test.mjs` (14) — **spawn-based integration test** for the CLI dispatcher; `copilot-companion.mjs` 14→24%. (Copilot, **opus 3×**)
+- `tests/entry-point.test.mjs` (4) — cross-platform regression guard for the bug below. (lead)
+
+### Real production bug found + fixed (the headline → reason for v0.8.1)
+- **`isEntryPoint` (Windows).** The companion's "am I run directly?" guard compared `path.resolve(argv[1])` against `new URL(import.meta.url).pathname` (`/C:/…`), which never matches the native Windows path (`C:\…`). So `main()` never ran when the CLI was spawned on Windows → **the entire plugin was broken on Windows** (silent exit 0, no output). Latent because the maintainer is on macOS and nothing spawned the entry point until `companion-cli.test.mjs`. Fixed: extracted an exported `isEntryPoint()` using `fileURLToPath`; added `entry-point.test.mjs`.
+
+### Two more Windows test-fragility fixes (delegated-test bugs, CI-caught)
+- `fs.test.mjs` `ensureAbsolutePath` — asserted `path.join` + a POSIX literal; fixed to mirror `path.resolve`.
+- `process.test.mjs` — assumed POSIX spawn semantics; `runCommand` uses `shell:true` on Windows (missing binary → non-zero exit, no `ENOENT`; multi-statement `-e` scripts mangled by cmd.exe). Fixed: outcome-based assertions + temp-file scripts.
+- `.github/copilot-instructions.md` extended with a **Cross-platform** section (paths + Windows shell/spawn) so delegated tests stop reintroducing these.
+
+### Flag re-probe (the other pending item) — closed, nothing to port
+- Re-probed `copilot --help` vs `buildCopilotArgs` on CLI 1.0.52: **zero drift.** Every unwired flag is the documented Tier 2/3 shelf. No new flags.
+
+### v0.8.1 release
+- `npm run publish-release -- 0.8.1` → 422 pass, all 3 manifests bumped (package.json + plugin.json + marketplace.json metadata+plugin), commit `de130c8`, tag `v0.8.1`, pushed, GH release. CI green. **Reason: ship the `isEntryPoint` Windows fix as a proper patch** (0.8.0 was broken on Windows).
+
+## Decisions locked this wave
+- **`isEntryPoint` uses `fileURLToPath`** (correct native path on all OSes). DESIGN §4.
+- **Second model-routing A/B (hard task):** Opus 3× on the integration test showed no quality margin over 1× and was the slowest job — **1× stays the default**; the value was the test *tier* (integration), not the model tier. DESIGN §2.9.
+- **`process.mjs` `shell:true` on Windows is correct** (needed for `.cmd`/`.bat` shims); tests must accommodate it, not the reverse.
+- **Coverage ceilings are intentional:** `copilot-companion.mjs` ~24% (review/task/plan/setup need the live binary) and `process.mjs` `terminateProcessTree` are out of scope for hermetic unit tests.
+
+## Pending / not done
+- **[ ] Deeper `copilot-companion.mjs` dispatch coverage** beyond ~24% — needs a live-`copilot` harness (the opt-in `integration.test.mjs` is the intended home). Out of scope for hermetic unit tests.
+- Carried-forward (still open): Linux real-host auth verification; move repo to `Claude-Copilot` org; port new Copilot flags when the binary updates (no drift at 1.0.52 today).
+
+## Blockers
+None.
+
+## Recent commits (newest first)
+`de130c8` (Release 0.8.1), `8848672` (process Windows fix + instructions cross-platform note), `5c964b9` (isEntryPoint fix + entry-point test), `2dccecd` (companion-cli integration), `c712f74` (review-context deeper), `50aa826` (runTrackedJob), `a70e263` (process), `314c66b` (render-extra), `590ba72` (doc refresh after wave 1).
+
+---
+
 # Session handoff — 2026-05-27 (test-coverage expansion + Copilot delegation workflow)
 
 ## Current task and status
