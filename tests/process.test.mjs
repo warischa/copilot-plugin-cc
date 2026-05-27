@@ -3,9 +3,12 @@
 // terminateProcessTree is intentionally excluded — it kills process trees and
 // is unsafe to exercise in CI.
 
-import { describe, it } from "node:test";
+import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import process from "node:process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const {
   formatCommandFailure,
@@ -16,6 +19,21 @@ const {
 
 // The running Node binary — guaranteed to exist and respond to --version.
 const NODE = process.execPath;
+
+// runCommand uses shell:true on Windows (required for .cmd/.bat shims like
+// copilot/git/npm). cmd.exe mangles multi-statement inline `node -e` scripts,
+// so run those from a temp file instead — the script text never touches the
+// shell, only the (space-free) file path does.
+const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), "copilot-proc-test-"));
+let scriptSeq = 0;
+function writeScript(body) {
+  const file = path.join(scriptDir, `script-${scriptSeq++}.mjs`);
+  fs.writeFileSync(file, body);
+  return file;
+}
+after(() => {
+  fs.rmSync(scriptDir, { recursive: true, force: true });
+});
 
 // ─── formatCommandFailure ──────────────────────────────────────────────────
 
@@ -110,7 +128,10 @@ describe("binaryAvailable", () => {
   it("returns available=false for a non-existent binary", () => {
     const result = binaryAvailable("this-binary-absolutely-does-not-exist-xyz99");
     assert.equal(result.available, false);
-    assert.equal(result.detail, "not found");
+    // "not found" on POSIX (ENOENT); on Windows (shell:true) a missing command
+    // yields a non-zero exit with a shell message instead of an ENOENT error,
+    // so assert a non-empty detail rather than the POSIX-only string.
+    assert.ok(result.detail, "detail should be non-empty");
   });
 
   it("returns available=false when the command exits non-zero", () => {
@@ -131,10 +152,10 @@ describe("runCommand", () => {
   });
 
   it("captures stderr separately from stdout", () => {
-    const result = runCommand(NODE, [
-      "-e",
-      "process.stderr.write('err'); process.stdout.write('out');",
-    ]);
+    const script = writeScript(
+      "process.stderr.write('err'); process.stdout.write('out');"
+    );
+    const result = runCommand(NODE, [script]);
     assert.equal(result.stdout, "out");
     assert.equal(result.stderr, "err");
   });
@@ -151,10 +172,15 @@ describe("runCommand", () => {
     assert.deepEqual(result.args, ["--version"]);
   });
 
-  it("returns an error (not a throw) for a missing binary", () => {
+  it("reports failure (without throwing) for a missing binary", () => {
     const result = runCommand("this-binary-absolutely-does-not-exist-xyz99", []);
-    assert.ok(result.error instanceof Error);
-    assert.equal(result.error.code, "ENOENT");
+    // POSIX: spawnSync returns an ENOENT error. Windows (shell:true): the shell
+    // runs and reports command-not-found via a non-zero exit, with no error
+    // object. Either way the command must not succeed.
+    assert.ok(result.error || result.status !== 0);
+    if (result.error) {
+      assert.equal(result.error.code, "ENOENT");
+    }
   });
 });
 
@@ -178,24 +204,23 @@ describe("runCommandChecked", () => {
     );
   });
 
-  it("throws the spawning error when the binary is not found", () => {
+  it("throws when the binary is not found", () => {
     assert.throws(
       () => runCommandChecked("this-binary-absolutely-does-not-exist-xyz99", []),
       (err) => {
+        // POSIX throws the ENOENT spawn error; Windows (shell:true) throws a
+        // formatted non-zero-exit failure. Both are Errors.
         assert.ok(err instanceof Error);
-        assert.equal(err.code, "ENOENT");
+        if (err.code) assert.equal(err.code, "ENOENT");
         return true;
       }
     );
   });
 
   it("throws with stderr included in the message when available", () => {
+    const script = writeScript("process.stderr.write('boom'); process.exit(1);");
     assert.throws(
-      () =>
-        runCommandChecked(NODE, [
-          "-e",
-          "process.stderr.write('boom'); process.exit(1);",
-        ]),
+      () => runCommandChecked(NODE, [script]),
       (err) => {
         assert.match(err.message, /boom/);
         return true;

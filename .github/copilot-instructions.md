@@ -40,6 +40,16 @@ bundler, no linter — the source runs directly.
 - Before finishing, run `node --test <your file>` and iterate until it is green.
 - Scope discipline: create only the test file(s) requested; do not modify
   production source unless explicitly told to.
+- **Cross-platform (CI runs Windows too).** Tests must pass on windows-latest,
+  not just locally:
+  - Build path expectations with the same API the code uses (`path.resolve` /
+    `path.join`); never hardcode `/` separators or POSIX-absolute literals like
+    `/a/b` — they differ from native Windows paths.
+  - `runCommand` uses `shell:true` on Windows. A missing binary there gives a
+    non-zero exit with **no `ENOENT` error** (not a thrown/`error` ENOENT), and
+    multi-statement inline `node -e "...; ..."` scripts get mangled by cmd.exe.
+    Assert outcomes (error **or** non-zero status), and run multi-statement
+    scripts from a temp file instead of `-e`.
 
 ## Style
 
