@@ -474,9 +474,15 @@ async function executeAdversarialReviewRun(request) {
   };
 }
 
-async function executeTaskRun(request) {
+export async function executeTaskRun(request, deps = {}) {
+  // deps lets tests inject a fake copilot runner + availability check so the
+  // dispatch/options-mapping/render logic is exercised without the live binary
+  // (same testability pattern as lib/copilot.mjs auth-detect). Defaults to the
+  // real implementations — production behavior is unchanged.
+  const runPrompt = deps.runCopilotPrompt ?? runCopilotPrompt;
+  const ensureAvailable = deps.ensureCopilotAvailable ?? ensureCopilotAvailable;
   const workspaceRoot = resolveWorkspaceRoot(request.cwd);
-  ensureCopilotAvailable(request.cwd);
+  ensureAvailable(request.cwd);
 
   const taskMetadata = buildTaskRunMetadata({
     prompt: request.prompt,
@@ -508,7 +514,7 @@ async function executeTaskRun(request) {
       ? request.sessionName.trim()
       : buildPersistentTaskSessionName(request.prompt || DEFAULT_CONTINUE_PROMPT);
 
-  const result = await runCopilotPrompt(workspaceRoot, {
+  const result = await runPrompt(workspaceRoot, {
     prompt: request.prompt || (resumeSessionId ? DEFAULT_CONTINUE_PROMPT : ""),
     resumeSessionId,
     sessionName: taskSessionName,
@@ -1199,9 +1205,13 @@ async function handleTask(argv) {
 //   - We pass deny-tool=write,shell to enforce read-only as defense-in-
 //     depth in case Copilot's plan mode ever tries to mutate the tree.
 //   - We do NOT enable autopilot or resume — plans are single-shot.
-async function executePlanRun(request) {
+export async function executePlanRun(request, deps = {}) {
+  // deps: inject a fake runner + availability check for hermetic tests (see
+  // executeTaskRun). Defaults to the real implementations.
+  const runPrompt = deps.runCopilotPrompt ?? runCopilotPrompt;
+  const ensureAvailable = deps.ensureCopilotAvailable ?? ensureCopilotAvailable;
   const workspaceRoot = resolveWorkspaceRoot(request.cwd);
-  ensureCopilotAvailable(request.cwd);
+  ensureAvailable(request.cwd);
 
   if (!request.prompt) {
     throw new Error("Provide a prompt describing what to plan.");
@@ -1213,7 +1223,7 @@ async function executePlanRun(request) {
     ? request.sessionName.trim()
     : buildPersistentTaskSessionName(`plan: ${request.prompt}`);
 
-  const result = await runCopilotPrompt(workspaceRoot, {
+  const result = await runPrompt(workspaceRoot, {
     prompt: request.prompt,
     sessionName: planSessionName,
     model: request.model,
