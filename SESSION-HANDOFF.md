@@ -1,3 +1,47 @@
+# Session handoff — 2026-05-27 (wave 3) — install docs, global uninstall, marketplace lint
+
+## Current task and status
+
+**Status:** Done. Post-v0.8.1 housekeeping: documented project-level install, verified + confirmed a clean global uninstall, and added a marketplace install-readiness lint to CI. **No new release** (v0.8.1 stands). Suite 422 → **426** (+4 marketplace lint), 1 skipped, 0 fail. CI green on Node 20/22 × Linux/macOS/Windows (run for `b7ccb48`). 2 commits (`89ed552`, `b7ccb48`). Working tree clean.
+
+## What this wave did
+
+### Plugin install scope — verified, then cleanly uninstalled from global
+- Verified the plugin had been installed **globally** (user-level): `~/.claude/plugins/{installed_plugins,known_marketplaces}.json` + `~/.claude/settings.json` (`enabledPlugins` / `extraKnownMarketplaces`); cache at 0.8.0; **no** project-level `.claude/`.
+- User ran `/plugin uninstall copilot@claude-copilot` + `/plugin marketplace remove claude-copilot`. Re-verified: **fully removed** — all 4 registry surfaces clear and the cache dir gone. (The published v0.8.1 on GitHub is unaffected — uninstall is local registration only.)
+
+### Project-level install documented (`89ed552`)
+- `README.md` § Install → new "Scope: global vs project-level" subsection: `.claude/settings.json` recipe (`extraKnownMarketplaces` + `enabledPlugins`), github source (pins the published 0.8.1) or local `directory` source, plus the global-uninstall commands.
+- `CLAUDE.md` → new "## Installing this plugin" section so an agent that auto-loads CLAUDE.md finds install steps (global + project-level), not only the human-facing README.
+
+### Marketplace install-readiness lint (`b7ccb48`)
+- `tests/marketplace.test.mjs` (4 tests): asserts marketplace name `claude-copilot`, plugin `copilot`, `source` resolves to a matching `plugin.json`, version consistency across manifests, and the `setup.md` payload — i.e., `/plugin install copilot@claude-copilot` will resolve. Complements `version:check` (version sync). Suite 422→426; CLAUDE.md test reference updated.
+
+### Install / uninstall readiness — verified (not executed)
+- Confirmed both install paths resolve: **local source** (manifests valid + consistent; 8 commands / 1 agent / 2 skills) and **github source** (`warischa/copilot-plugin-cc` PUBLIC, `marketplace.json` on `main`, release `v0.8.1` published, not draft). Uninstall proven by the clean-removal check above. (The interactive `/plugin` commands can't be run by an agent — only their inputs verified.)
+
+## Reusable workflows (for next time)
+- **Check install scope:** inspect `~/.claude/plugins/{installed_plugins,known_marketplaces}.json` + `~/.claude/settings.json` (`enabledPlugins`/`extraKnownMarketplaces`) + `cache/claude-copilot/`; project scope lives in `<repo>/.claude/settings.json`.
+- **Verify install-readiness without installing:** parse marketplace.json → plugin.json (name/version/source consistency) + `gh repo view` / `gh release view v<x>` for the github source. Now codified in `tests/marketplace.test.mjs`.
+- **Project-level setup:** drop `.claude/settings.json` with `extraKnownMarketplaces["claude-copilot"]` + `enabledPlugins["copilot@claude-copilot"]: true`; `/reload-plugins`. No `/plugin install` needed.
+
+## Decisions locked this wave
+- **Install docs live where agents read** — `CLAUDE.md` carries a concise install pointer; the full recipe is in `README.md` (same principle as `.github/copilot-instructions.md`).
+- **Install-readiness is CI-gated** — `marketplace.test.mjs` guards manifest shape + the documented install id, so a manifest typo that would break `/plugin install` fails CI instead of a user's install.
+- **github source pins the published release** (0.8.1, with the Windows fix); the `directory` source tracks the working tree (dev only).
+
+## Pending / not done (carried)
+- **[ ] Deeper `copilot-companion.mjs` dispatch coverage** (>~24%) — needs a live-`copilot` harness (the opt-in `integration.test.mjs`).
+- Linux real-host auth verification; move repo to `Claude-Copilot` org; port new Copilot flags when the binary updates (no drift at 1.0.52).
+
+## Blockers
+None.
+
+## Recent commits (newest first)
+`b7ccb48` (marketplace install-readiness lint + CLAUDE.md test count), `89ed552` (project-level install docs + CLAUDE.md install pointer), `6d59bd0` (wave-2 doc refresh), `de130c8` (Release 0.8.1).
+
+---
+
 # Session handoff — 2026-05-27 (wave 2) — integration-tier coverage + v0.8.1
 
 ## Current task and status

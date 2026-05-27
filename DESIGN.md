@@ -254,6 +254,8 @@ A two-wave test-hardening day run as a lead-agent-delegating-to-Copilot exercise
 - **[x] Second model-routing A/B (hard task).** Routed the `companion-cli` integration test to Opus 4.6 (3×) against the 1× baseline: Opus was the slowest job with no quality margin; **1× remains the default** (see §2.9). The value came from the test *tier* (integration), not the model tier.
 - **[~] Remaining ceiling (intentional).** `copilot-companion.mjs` stays ~24% and `process.mjs` ~51% by design — the bulk needs the live `copilot` binary (review/task/plan/setup; that's what the opt-in `integration.test.mjs` is for) or kills process trees (`terminateProcessTree`). Out of scope for hermetic unit tests.
 
+- **[x] Install-readiness lint (post-0.8.1).** `tests/marketplace.test.mjs` (4 tests) asserts the marketplace/plugin manifest shape, the documented `copilot@claude-copilot` install id, `source` → `plugin.json` resolution, version consistency, and the `setup.md` payload — so `/plugin install` resolves. Complements `version:check` (version sync). Suite 422→426. Project-level install (`.claude/settings.json`) + a CLAUDE.md install pointer were also documented in README § Install.
+
 ### Optional follow-ups — all shipped in 0.2.0
 
 - **[x] Cut a `0.1.1` patch release** — done. Tag `v0.1.1`, commit `028aa6e`. Exercised the new `bump-version` flow end-to-end.
