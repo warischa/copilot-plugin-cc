@@ -94,4 +94,4 @@ Jobs are scoped per git repository via `lib/workspace.mjs` (uses `git rev-parse 
 
 ## Tests
 
-`node --test tests/*.test.mjs`. Tests use a temp `CLAUDE_PLUGIN_DATA` directory so they don't touch user state. Coverage is intentionally minimal (args parser, state CRUD, render functions) — no integration tests against the real `copilot` binary.
+`node --test tests/*.test.mjs`. Tests use temp `CLAUDE_PLUGIN_DATA` directories, temp git repos, and temp dirs so they don't touch user state. As of 2026-05-27 the suite has **306 tests** (1 skipped) covering most `lib/` modules directly — args, state, render, plugin-config, job-liveness, job-control, git (review-target + `collectReviewContext`), fs, prompts, workspace, tracked-jobs, and the `copilot.mjs` JSONL event parsers (`describeEvent`, `captureFinalAnswer`). The real-binary integration test (`tests/integration.test.mjs`) is opt-in via `COPILOT_INTEGRATION=1`. Measure with `node --test --experimental-test-coverage`. Still light: the `copilot-companion.mjs` CLI dispatcher and other orchestration surfaces, which need subprocess/integration harnesses — see DESIGN.md §5 "Test-coverage expansion".

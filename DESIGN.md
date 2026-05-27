@@ -121,6 +121,16 @@ The genuinely new code is `lib/copilot.mjs` (~330 LOC) plus a slimmer `copilot-c
 
 **Future:** Add Linux Secret Service probe + Windows Credential Manager probe, or accept "unknown — try a command" as the result.
 
+### 2.9 Test-coverage delegation, model routing, and export-for-testability
+
+**Decision:** Unit tests are written by delegating one scoped test file per Copilot CLI agent (run through the companion `task` path), with the lead agent (Claude) owning architecture, invariant-critical tests, verification, and commit gating. Internal functions are `export`ed when needed purely to make them unit-testable (e.g. `describeEvent`, `captureFinalAnswer` on 2026-05-27), provided the export is additive and behavior-neutral.
+
+**Model routing:** delegated jobs are routed by complexity — 1× models (`gpt-5.4`, `claude-sonnet-4.6`) for deterministic, verifiable work; premium tiers (`claude-opus-4.6` 3×, `gpt-5.5` 7.5×, `claude-opus-4.7` 15×) reserved for ambiguous reasoning or debugging. `--model <slug>` passes through `buildCopilotArgs` verbatim (see §4 "Models change"); Copilot rejects invalid slugs at startup, so a clean exit means the slug was accepted.
+
+**Why:** the `node --test` gate is the quality backstop, so a cheap model + verify-loop beats an expensive model for codegen. **Evidence:** a controlled 1×-vs-3× A/B on `collectReviewContext` (2026-05-27) showed the 3× model produced no better tests than the 1× — the 1× file was richer. The multiplier did not earn itself for verifiable test-writing.
+
+**Convention carrier:** repo test conventions live in `.github/copilot-instructions.md` (auto-loaded by Copilot in-repo per `detectInstructionsFiles`), not in per-prompt boilerplate — a 3-sentence work order then produces convention-correct tests.
+
 ---
 
 ## 3. Deliberate omissions from v1
@@ -151,6 +161,7 @@ These are **not bugs** — they were scoped out. Pick up here if extending.
 - **PID reuse blindspot in `lib/job-liveness.mjs`.** The sweep uses `process.kill(pid, 0)` to check liveness. If the OS reuses a dead worker's pid for an unrelated process, the sweep sees "alive" and won't flip the orphan record. The mitigation, when needed, is an age threshold on `startedAt` — a ~5-line addition in `sweepDeadJobs`. Not done in v1.
 - **Every `npm test` spends one Copilot API call.** `tests/integration.test.mjs` auto-skips when copilot isn't installed/authed, but on dev machines that *are* authed, the suite runs a real prompt every time (~14s, costs one Copilot turn). If this becomes friction, gate behind `COPILOT_INTEGRATION=1` in the test's `before()` block.
 - **Windows cmdkey target format is `copilot-cli/<api-url>:<github-account>`.** Verified on a real Windows host; `parseCmdKeyOutput` is tested against the verbatim line. GitHub Enterprise should work without changes — the regex matches `https://ghe.example.com:user` the same way.
+- **Test path assertions must mirror the implementation's `path` API, never hardcode separators.** `ensureAbsolutePath` uses `path.resolve`; a delegated test that asserted against `path.join` and a literal `/a/b` passed on macOS but failed on windows-latest/Node 22 (drive-letter prepend + backslashes). Caught by CI 2026-05-27, not by the local run. Rule for fixtures: build expectations with the same `path.resolve`/`path.join` the code uses, and never assert a hardcoded POSIX path. Recurrence of the 0.2.0 Windows path-fragility lesson — **CI (Node 20/22 × 3 OS) is the cross-platform gate, local macOS green is not sufficient.**
 
 ---
 
@@ -225,6 +236,18 @@ A re-probe of `copilot --help` against Copilot CLI 1.0.52 (still the latest at 2
 Implementation gate: same standard as 0.6.0/0.7.0 — every flag verified against `copilot --help` on the installed binary, every flag goes through `buildCopilotArgs`, every flag gets unit coverage. Unit tests in `companion-helpers.test.mjs` cover all three buckets (`buildCopilotArgs (E1 secret-env-vars …)`, `buildCopilotArgs (E2 auto-update lock …)`, `buildCopilotArgs (E3 sessionName …)`).
 
 **Audit-vs-probe lesson:** the 0.8.0 finding loop was *re-probe `copilot --help` → audit `buildCopilotArgs` source against it → find both missed flags and latent gaps*. The audit channel turned up two of three wins this round (`allowAutoUpdate` escape hatch, `sessionName` exposure) even though the upstream-drift channel was dry. Future post-port discoveries should run both passes, not just the probe.
+
+### Test-coverage expansion (2026-05-27)
+
+Not a release — a test-hardening session run as a lead-agent-delegating-to-Copilot exercise. No version tag. 180 → 306 tests (+126), 0 fail, CI green on Node 20/22 × Linux/macOS/Windows.
+
+- **[x] Export event-stream parsers** — `describeEvent` + `captureFinalAnswer` made `export` in `lib/copilot.mjs` (additive, behavior-neutral) so the JSONL parser is directly unit-tested. `tests/event-stream.test.mjs` (16). See §2.9.
+- **[x] Cover 7 previously-untested `lib/` modules** — new files for `git` review-target resolution + `collectReviewContext`, `job-control`, `tracked-jobs`, `fs`, `prompts`, `workspace`. All written by delegated Copilot agents and verified against the suite before commit.
+- **[x] `.github/copilot-instructions.md`** — repo conventions auto-loaded by Copilot in-repo; carries ESM/node:test/temp-dir rules + invariants. Proven by producing clean tests from a 3-sentence prompt.
+- **[x] Coverage workflow** — `node --test --experimental-test-coverage` is the measurement of record (test count ≠ coverage; it surfaced a silently-dropped task).
+- **[x] Model-routing A/B** — 1× vs 3× on `collectReviewContext`; the 3× model did not beat 1×. See §2.9.
+- **[x] Windows path-fragility fix** — `fs.test.mjs` `ensureAbsolutePath` (see §4).
+- **[ ] Integration tier (pending).** Orchestration surfaces remain low-coverage and need subprocess/integration harnesses, not unit tests: `copilot-companion.mjs` `main()` dispatch (~14%), `render.mjs` (~52%), `tracked-jobs.runTrackedJob`, `collectReviewContext` deeper branches, `process.mjs` (~33%).
 
 ### Optional follow-ups — all shipped in 0.2.0
 

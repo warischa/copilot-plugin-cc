@@ -1,3 +1,71 @@
+# Session handoff — 2026-05-27 (test-coverage expansion + Copilot delegation workflow)
+
+## Current task and status
+
+**Status:** Done. **No version release** this session — it was a test-hardening + workflow session run as a "lead agent (Claude) delegating to a team of Copilot CLI agents."
+
+Working tree was clean on `main` at v0.8.0 (commit `10be60e`) before the session. **180 → 306 tests pass** (+126), 1 skipped (integration still opt-in), 0 fail. **8 commits pushed to `main`; CI green** on Node 20/22 × Linux/macOS/Windows (run `26490861099`). No tag cut.
+
+Last actions (in order):
+1. Installed the plugin locally (`/plugin marketplace add <local path>` + `/plugin install copilot@claude-copilot`) and smoke-tested a real Copilot `task` run end-to-end (delegated dev task → files written into a scratch folder → verified). Observed Copilot self-correct an ESM/CommonJS mismatch across turns.
+2. Audited coverage: 7 `lib/` modules had **zero direct unit tests** (`git`, `job-control`, `tracked-jobs`, `process`, `fs`, `prompts`, `workspace`).
+3. Exported two internal event-stream parsers from `lib/copilot.mjs` (`describeEvent`, `captureFinalAnswer`) so they can be unit-tested. Additive, behavior-neutral; suite stayed green before/after.
+4. Delegated test-writing to parallel Copilot agents via the companion `task` path (one scoped file each, `--background`); verified every returned file against the real suite before committing. Lead authored the invariant-critical event-parser test directly.
+5. Added `.github/copilot-instructions.md` (auto-loaded by Copilot in-repo) carrying ESM/node:test/temp-dir conventions + the do-not-break invariants — proven by producing clean tests from a 3-sentence prompt.
+6. Established a coverage-measurement workflow (`node --test --experimental-test-coverage`); it surfaced a silently-dropped task and the real remaining gaps.
+7. Ran a controlled A/B (Sonnet 4.6 1× vs Opus 4.6 3×) on the same hard target (`collectReviewContext`); kept the better (Sonnet) file, deleted the other.
+8. Pushed; CI surfaced a Windows-only failure in the delegated `fs.test.mjs`; fixed it (`path.resolve` vs `path.join`) and re-pushed; CI green.
+
+## What this session shipped (8 commits, no release)
+
+### New test files (+126 tests)
+
+- `tests/event-stream.test.mjs` (16) — `describeEvent` + `captureFinalAnswer`; guards the two invariants (final answer = `assistant.message` `phase:final_answer`; session id from `result`). **Lead-authored.**
+- `tests/git-target.test.mjs` (11) — `resolveReviewTarget` precedence, `detectDefaultBranch`, `getWorkingTreeState` over temp git fixtures. (Copilot, `gpt-5.4`)
+- `tests/job-control.test.mjs` (38) — sort, progress-preview tail, reference resolution (exact/prefix/newest/ambiguous/not-found), enrich, snapshot. (Copilot, `gpt-5.4`)
+- `tests/fs.test.mjs` (12), `tests/prompts.test.mjs` (8), `tests/workspace.test.mjs` (4) — pure helpers. (Copilot, `claude-sonnet-4.6`)
+- `tests/tracked-jobs.test.mjs` (31) — `createProgressReporter` (incl. the `[copilot]`→stderr invariant), `createJobRecord`, log append, `nowIso`, `createJobProgressUpdater`. (Copilot, `gpt-5.4`, from a 3-sentence prompt using the new instructions file.)
+- `tests/review-context.test.mjs` (6) — `collectReviewContext`: working-tree inline-diff, both self-collect threshold paths, branch mode (single + multi-file), object shape. (Copilot, `claude-sonnet-4.6`; A/B winner.)
+
+### Source + config changes
+
+- `lib/copilot.mjs`: `describeEvent` / `captureFinalAnswer` flipped internal → `export` (behavior-neutral). Unblocks direct testing of the JSONL parser — the Copilot-upgrade drift-catch surface.
+- `.github/copilot-instructions.md` (new): auto-loaded by the Copilot CLI in-repo (see `detectInstructionsFiles`). Carries test conventions + invariants so delegated agents inherit them without per-prompt boilerplate.
+- `tests/fs.test.mjs` (CI fix): `ensureAbsolutePath` tests asserted against `path.join` + a hardcoded POSIX literal → failed only on windows-latest/Node 22. Fixed to mirror the implementation's `path.resolve`.
+
+## Coverage baseline (post-session)
+
+Via `node --test --experimental-test-coverage`. Now covered: `workspace` 100%, `plugin-config` 99%, `job-liveness` 96%, `args` 92%, `job-control` 84%, `fs` 82%, `copilot` 73%, `prompts` 77%, `tracked-jobs` 62% (was 0% funcs).
+
+**Remaining gaps — new pending (integration tier; need subprocess/integration harnesses, not unit tests):** `copilot-companion.mjs` ~14% (1,668-line `main()` dispatcher), `render.mjs` ~52%, `git.collectReviewContext` deeper branches, `tracked-jobs.runTrackedJob` (async orchestrator), `process.mjs` ~33% (spawn/kill internals). See DESIGN.md §5 "Test-coverage expansion".
+
+## Decisions locked this session
+
+- **Export internal event parsers for testability** — additive, behavior-neutral. (DESIGN.md §2.9, §4.)
+- **Cost-aware model routing** — 1× (`gpt-5.4`/`claude-sonnet-4.6`) for deterministic verifiable work; reserve 3×+ (`claude-opus-4.6` 3×, `gpt-5.5` 7.5×, `claude-opus-4.7` 15×) for ambiguous reasoning/debugging. **Evidence:** the 1×-vs-3× A/B on `collectReviewContext` showed 3× produced no better tests than 1×. (DESIGN.md §2.9.)
+- **Conventions live in `.github/copilot-instructions.md`, not prompts** — auto-loaded; proven by the 3-sentence tracked-jobs work order. (DESIGN.md §2.9.)
+- **Verification discipline** — verify each delegated file as its agent reports done; run the full suite only after all agents complete (a mid-iteration full run reads half-written files); **CI is the cross-platform gate** (local macOS green ≠ Windows green). (DESIGN.md §4.)
+
+## Reusable workflow (lead-agent delegation)
+
+1. Codify conventions once in `.github/copilot-instructions.md` (Copilot auto-loads it in-repo).
+2. Delegate one scoped file per Copilot agent via `node plugins/copilot/scripts/copilot-companion.mjs task --model <slug> "<short prompt>"` (parallel `--background`); keep invariant-critical / contract-heavy work for the lead.
+3. Route by job: 1× for deterministic/verifiable; premium only when a cheaper model demonstrably fails.
+4. Verify each returned file with `node --test <file>`; run the full suite only after all agents finish.
+5. Push; treat CI (Node 20/22 × 3 OS) as the real gate; diagnose + fix cross-platform breaks.
+
+Model slugs confirmed accepted via `--model`: `claude-sonnet-4.6`, `claude-opus-4.6` (Copilot rejects invalid slugs at startup, so a clean exit 0 = the slug was accepted).
+
+## Blockers
+
+None.
+
+## Recent commits (newest first)
+
+`89960f1` (collectReviewContext tests), `c6633a6` (fix Windows path assertions in fs tests), `93cde19` (tracked-jobs tests), `cc89175` (copilot-instructions.md), `aea397b` (fs/prompts/workspace tests), `d46edb3` (job-control tests), `ea193dc` (git review-target tests), `758f55a` (export event parsers + event-stream tests).
+
+---
+
 # Session handoff — 2026-05-26 (through `v0.8.0`)
 
 ## Current task and status
