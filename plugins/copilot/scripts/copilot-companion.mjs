@@ -1649,15 +1649,22 @@ async function main() {
   }
 }
 
-const isDirectInvocation = (() => {
+export function isEntryPoint(argv1, importMetaUrl) {
   try {
-    const entry = process.argv[1] && path.resolve(process.argv[1]);
-    const self = new URL(import.meta.url).pathname;
-    return entry === self;
+    if (!argv1) return false;
+    // Compare native paths on both sides. fileURLToPath() yields the correct
+    // platform path (on Windows: drive letter + backslashes, no leading slash),
+    // matching path.resolve(argv1). Using `new URL(importMetaUrl).pathname` here
+    // breaks on Windows (`/C:/...` vs `C:\...`) so main() would never run — the
+    // companion would silently exit 0 with no output. Regression-guarded by
+    // tests/entry-point.test.mjs and tests/companion-cli.test.mjs.
+    return path.resolve(argv1) === fileURLToPath(importMetaUrl);
   } catch {
     return false;
   }
-})();
+}
+
+const isDirectInvocation = isEntryPoint(process.argv[1], import.meta.url);
 
 if (isDirectInvocation) {
   main().catch((error) => {
