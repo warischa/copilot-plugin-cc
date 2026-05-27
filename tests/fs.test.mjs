@@ -93,10 +93,14 @@ describe("ensureAbsolutePath", () => {
   it("resolves a relative path against cwd", () => {
     const cwd = "/my/project";
     const rel = "src/index.js";
-    assert.equal(ensureAbsolutePath(cwd, rel), path.join(cwd, rel));
+    // Mirror the implementation (path.resolve), not path.join — they diverge on
+    // Windows, where path.resolve prepends the current drive letter.
+    assert.equal(ensureAbsolutePath(cwd, rel), path.resolve(cwd, rel));
   });
 
   it("resolves . relative to cwd", () => {
-    assert.equal(ensureAbsolutePath("/a/b", "."), "/a/b");
+    // Use path.resolve for the expectation so the assertion holds on Windows
+    // (where "/a/b" normalizes onto the current drive) as well as POSIX.
+    assert.equal(ensureAbsolutePath("/a/b", "."), path.resolve("/a/b", "."));
   });
 });
