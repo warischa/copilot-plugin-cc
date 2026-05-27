@@ -73,6 +73,26 @@ A simple first run:
 /copilot:result
 ```
 
+### Scope: global vs project-level
+
+The commands above install **globally** (user-level) — the plugin is available in every Claude Code session. To scope it to a **single project** instead, skip `/plugin install` and commit a `.claude/settings.json` in that repo:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "claude-copilot": {
+      "source": { "source": "github", "repo": "warischa/copilot-plugin-cc" }
+    }
+  },
+  "enabledPlugins": { "copilot@claude-copilot": true }
+}
+```
+
+- The project settings *enable* the plugin for that repo — you don't run `/plugin install`. Run `/reload-plugins` (or reopen the project) to pick it up.
+- Commit `.claude/settings.json` to share with the team, or use `.claude/settings.local.json` (gitignored) for a personal, per-project setup.
+- For local plugin development, point at a checkout instead of GitHub: `"source": { "source": "directory", "path": "/abs/path/to/copilot-plugin-cc" }`.
+- To remove a **global** install: `/plugin uninstall copilot@claude-copilot` then `/plugin marketplace remove claude-copilot`.
+
 ## Usage
 
 ### `/copilot:review`

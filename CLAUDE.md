@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Claude Code plugin (marketplace-style repo) that wraps the [GitHub Copilot CLI](https://github.com/features/copilot/cli) (`copilot` binary) so users can run code reviews and delegate tasks to Copilot through `/copilot:*` slash commands inside Claude Code.
 
+## Installing this plugin
+
+If asked to install or enable this plugin (as opposed to developing it), see [`README.md` "Install"](README.md) for the full flow. Quick reference — marketplace slug is `claude-copilot`, plugin name is `copilot`:
+
+- **Global** (every session): `/plugin marketplace add warischa/copilot-plugin-cc` → `/plugin install copilot@claude-copilot` → `/reload-plugins`.
+- **Project-level** (one repo): add a `.claude/settings.json` with `extraKnownMarketplaces["claude-copilot"]` (github `warischa/copilot-plugin-cc`, or a local `directory` path for plugin development) plus `enabledPlugins["copilot@claude-copilot"]: true`. Do **not** run `/plugin install` for this — the project settings enable it; `/reload-plugins` to pick it up.
+- Verify either way with `/copilot:setup`.
+
 ## Conceptual source
 
 **Reference implementation: [https://github.com/openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc)**
