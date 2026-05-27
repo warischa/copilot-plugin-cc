@@ -362,7 +362,7 @@ function parseJsonlChunk(buffer, onEvent) {
   }
 }
 
-function describeEvent(event) {
+export function describeEvent(event) {
   switch (event.type) {
     case "session.mcp_server_status_changed":
     case "session.mcp_servers_loaded":
@@ -423,7 +423,7 @@ function describeEvent(event) {
   }
 }
 
-function captureFinalAnswer(state, event) {
+export function captureFinalAnswer(state, event) {
   if (event.type === "assistant.message" && event.data?.phase === "final_answer") {
     const text = typeof event.data.content === "string" ? event.data.content : "";
     if (text) {
