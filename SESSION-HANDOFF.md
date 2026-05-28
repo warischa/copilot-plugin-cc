@@ -1,3 +1,49 @@
+# Session handoff — 2026-05-28 (wave 4) — task/plan dispatch hermetic tests + flag re-probe
+
+## Current task and status
+
+**Status:** Done. Small wave: one already-landed commit documented (`1073978`, 2026-05-27 13:53 +0700, "Add injectable runner to task/plan dispatch + hermetic tests") that was not yet described in this handoff, plus a coverage re-measure and a Copilot CLI flag re-probe. **No new release** (v0.8.1 stands). Suite 426 → **433** pass + 1 skipped + 0 fail. CI green on `main` (5 most-recent runs all ✅; newest covers `1073978`). Working tree clean.
+
+## What this wave covers (one prior commit + two diagnostics)
+
+### Commit `1073978` — injectable runner on task/plan dispatch (the work)
+- `executeTaskRun` / `executePlanRun` in `copilot-companion.mjs` gained an **additive, behavior-neutral `deps` parameter** (defaults to the real `runCopilotPrompt` + `ensureCopilotAvailable`) and were exported. Pure dependency injection — the production call sites still pass nothing, so production behavior is unchanged.
+- `tests/run-dispatch.test.mjs` (+7 tests) exercises option-mapping, session-name precedence, prompt validation, and result/render shaping **without spawning `copilot`** — the hermetic alternative to a live-binary harness. Suite 426→**433**.
+- Coverage lift on `copilot-companion.mjs`: **~24% → 34.60% line / ~28% → 38.18% funcs**. The wave-2 "deeper dispatch coverage" pending item is now narrowed — task/plan dispatch is covered hermetically; review/adversarial-review handlers + setup + the background `task-worker` are the remaining live-binary surface.
+
+### Coverage re-measure (today)
+Per `node --test --experimental-test-coverage`. Top-line: 433 pass, 1 skipped, 0 fail; suite total 434 tests across 27 test files. Module status:
+- **100%:** `render.mjs`, `workspace.mjs`
+- **≥90% line:** `args.mjs` (98.4), `state.mjs` (92.6), `tracked-jobs.mjs` (94.6), `git.mjs` (92.0), `plugin-config.mjs` (98.6), `job-liveness.mjs` (98.2)
+- **80–90% line:** `job-control.mjs` (89.3), `fs.mjs` (82.5)
+- **Capped (live binary needed):** `copilot.mjs` (73.1), `copilot-companion.mjs` (34.6 — task/plan dispatch covered; review/setup/worker not), `process.mjs` (51.1 — `terminateProcessTree` excluded by design), `prompts.mjs` (76.9)
+
+### Copilot CLI flag re-probe (today)
+- `copilot --version` → **1.0.52** (same as wave 2 and wave 3 probes — no upstream release since).
+- `copilot --help` audited against `buildCopilotArgs`: **zero drift.** Wired flags (`-p`, `--allow-all-tools`, `--deny-tool`, `--model`, `--effort`, `--output-format`, `--resume`/`--continue`, `--secret-env-vars`, `--no-auto-update`/`--allow-auto-update`, `-n`/`--name`/`--session-name`, `--no-remote`/`--allow-remote`, `--no-ask-user`/`--allow-ask-user`) all still present and behave as documented. Unwired flags remain the cataloged Tier 2/3 shelf (`--acp`, `--add-dir`, `--agent`, `--attachment`, `--autopilot`/`--max-autopilot-continues`, `--connect`, `--mode`, `--silent`, `--share`/`--share-gist`, `--stream`, MCP toolset flags). No new flags appeared, none removed.
+
+### CI status
+`gh run list --branch main --limit 5` → all 5 most-recent runs green. Newest run covers `1073978`, confirming the dispatch-refactor + hermetic tests pass on Node 20/22 × Linux/macOS/Windows.
+
+## Decisions locked this wave
+- **Injectable runner is the hermetic-test pattern** for dispatch functions that orchestrate `runCopilotPrompt`. The `deps` parameter is additive and defaults to real implementations, so production paths are unchanged. The same pattern can be applied to the review handlers next if/when they're prioritized.
+- **Coverage ceiling reframed:** `copilot-companion.mjs` at ~35% is the new hermetic floor. The remaining gap (review/setup/worker) is explicitly out of scope for unit tests — it belongs in `tests/integration.test.mjs` (already opt-in via `COPILOT_INTEGRATION=1`).
+- **Flag re-probe cadence:** two consecutive zero-drift probes do not retire the channel — the next probe should still run when the Copilot CLI advances past 1.0.52.
+
+## Pending / not done (carried)
+- **[ ] Live-binary coverage** for the review / adversarial-review / setup / background-worker handlers in `copilot-companion.mjs` (would lift it past ~35%). Home is `tests/integration.test.mjs`.
+- **[ ] Linux real-host auth verification** (carried from wave 2).
+- **[ ] Repo move to `Claude-Copilot` org** (carried; only if a real org is created — DESIGN §2.7).
+- **[ ] Port new Copilot flags when the binary updates** (no drift at 1.0.52 today).
+
+## Blockers
+None.
+
+## Recent commits (newest first)
+`1073978` (injectable runner + run-dispatch hermetic tests), `a056c4f` (wave-3 doc refresh), `b7ccb48` (marketplace install-readiness lint), `89ed552` (project-level install docs), `6d59bd0` (wave-2 doc refresh), `de130c8` (Release 0.8.1).
+
+---
+
 # Session handoff — 2026-05-27 (wave 3) — install docs, global uninstall, marketplace lint
 
 ## Current task and status
