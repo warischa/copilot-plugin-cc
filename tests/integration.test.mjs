@@ -3,7 +3,7 @@
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -20,6 +20,7 @@ const { getCopilotAuthStatus } = await import(
 const ORIGINAL_ENV = process.env.CLAUDE_PLUGIN_DATA;
 let tempDir;
 let skipReason = null;
+const createdRepos = [];
 
 // Opt-in gate: `npm test` defaults to skipping the integration test so it
 // doesn't burn a real Copilot API call (~14s, one billable turn). Run with
@@ -59,6 +60,9 @@ after(() => {
   if (tempDir) {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+  for (const repo of createdRepos) {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
 });
 
 function runCompanion(args, { timeoutMs = 120_000 } = {}) {
@@ -94,6 +98,33 @@ function findStateDir() {
   const entries = fs.readdirSync(stateRoot);
   if (entries.length === 0) return null;
   return path.join(stateRoot, entries[0]);
+}
+
+// Build a throwaway git repo with one committed file plus an uncommitted
+// modification, so the review path has a real working-tree diff to chew on.
+// Returns the repo's absolute path; registered for teardown in `after`.
+function makeReviewRepo() {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "copilot-plugin-review-"));
+  createdRepos.push(repo);
+  const filePath = path.join(repo, "math.js");
+  // Avoid touching the developer's global git identity.
+  const git = (...args) => {
+    const res = spawnSync(
+      "git",
+      ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args],
+      { cwd: repo, encoding: "utf8" }
+    );
+    if (res.status !== 0) {
+      throw new Error(`git ${args.join(" ")} failed: ${res.stderr || res.stdout}`);
+    }
+  };
+  git("init", "-q");
+  fs.writeFileSync(filePath, "export function add(a, b) {\n  return a + b;\n}\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "baseline");
+  // Working-tree change with an obvious bug for the reviewer to notice.
+  fs.writeFileSync(filePath, "export function add(a, b) {\n  return a - b; // bug: should add\n}\n");
+  return { repo, filePath };
 }
 
 describe("integration: real copilot via companion", () => {
@@ -168,6 +199,209 @@ describe("integration: real copilot via companion", () => {
         payload.threadId,
         "stored job's threadId should match the session id returned by the run"
       );
+    }
+  );
+});
+
+describe("integration: setup against the real binary", () => {
+  it(
+    "setup --json: reports the installed + authenticated copilot binary",
+    { timeout: 30_000 },
+    async (t) => {
+      // The gate's before() already confirmed available + loggedIn, so a
+      // green gate means setup must agree. No API call is spent here — setup
+      // only probes the binary + auth, so it's the cheap end of the live tier.
+      if (skipReason) {
+        t.skip(skipReason);
+        return;
+      }
+
+      const { code, stdout, stderr } = await runCompanion(["setup", "--json"]);
+      assert.equal(code, 0, `companion exited ${code}. stderr:\n${stderr}`);
+
+      let report;
+      try {
+        report = JSON.parse(stdout);
+      } catch (err) {
+        throw new Error(`stdout was not valid JSON. err=${err.message}\nstdout:\n${stdout}`);
+      }
+
+      assert.equal(report.copilot?.available, true, `expected copilot available. report=${JSON.stringify(report)}`);
+      assert.equal(report.auth?.loggedIn, true, `expected copilot authenticated. report=${JSON.stringify(report)}`);
+      assert.equal(report.ready, true, `expected setup ready. report=${JSON.stringify(report)}`);
+      assert.ok(Array.isArray(report.nextSteps), "nextSteps should be an array");
+      assert.equal(report.nextSteps.length, 0, `a ready setup should have no next steps. got=${JSON.stringify(report.nextSteps)}`);
+    }
+  );
+});
+
+describe("integration: review + adversarial-review against the real binary", () => {
+  it(
+    "review --json: returns a non-empty review, captures threadId, and never mutates the tree",
+    { timeout: 180_000 },
+    async (t) => {
+      if (skipReason) {
+        t.skip(skipReason);
+        return;
+      }
+
+      const { repo, filePath } = makeReviewRepo();
+      const before = fs.readFileSync(filePath, "utf8");
+
+      const { code, stdout, stderr } = await runCompanion([
+        "review",
+        "--cwd",
+        repo,
+        "--json"
+      ]);
+      assert.equal(code, 0, `companion exited ${code}. stderr:\n${stderr}`);
+
+      let payload;
+      try {
+        payload = JSON.parse(stdout);
+      } catch (err) {
+        throw new Error(`stdout was not valid JSON. err=${err.message}\nstdout:\n${stdout}`);
+      }
+
+      assert.equal(payload.copilot?.status, 0, `copilot reported non-zero status. payload=${JSON.stringify(payload)}`);
+      assert.ok(
+        typeof payload.rawOutput === "string" && payload.rawOutput.trim().length > 0,
+        `expected a non-empty review. payload=${JSON.stringify(payload)}`
+      );
+      assert.ok(
+        typeof payload.threadId === "string" && payload.threadId.length > 0,
+        `expected threadId (sessionId) to be captured. payload=${JSON.stringify(payload)}`
+      );
+
+      // Read-only invariant: the deny-tool=write,shell baseline must keep the
+      // reviewed file byte-for-byte unchanged.
+      assert.equal(
+        fs.readFileSync(filePath, "utf8"),
+        before,
+        "review must not mutate the working tree"
+      );
+
+      // The job persisted as completed for this (single-job) workspace, so it
+      // surfaces as latestFinished in the status snapshot.
+      const completed = await runCompanion(["status", "--cwd", repo, "--json"]);
+      const snapshot = JSON.parse(completed.stdout);
+      const reviewJob = snapshot.latestFinished;
+      assert.ok(reviewJob, `expected a finished review job in status. snapshot=${JSON.stringify(snapshot)}`);
+      assert.equal(reviewJob.kind, "review", `expected a review job. job=${JSON.stringify(reviewJob)}`);
+      assert.equal(reviewJob.status, "completed", `review job not completed. job=${JSON.stringify(reviewJob)}`);
+    }
+  );
+
+  it(
+    "adversarial-review --json: accepts a focus arg and returns a non-empty review",
+    { timeout: 180_000 },
+    async (t) => {
+      if (skipReason) {
+        t.skip(skipReason);
+        return;
+      }
+
+      const { repo, filePath } = makeReviewRepo();
+      const before = fs.readFileSync(filePath, "utf8");
+
+      const { code, stdout, stderr } = await runCompanion([
+        "adversarial-review",
+        "focus on arithmetic correctness",
+        "--cwd",
+        repo,
+        "--json"
+      ]);
+      assert.equal(code, 0, `companion exited ${code}. stderr:\n${stderr}`);
+
+      let payload;
+      try {
+        payload = JSON.parse(stdout);
+      } catch (err) {
+        throw new Error(`stdout was not valid JSON. err=${err.message}\nstdout:\n${stdout}`);
+      }
+
+      assert.equal(payload.copilot?.status, 0, `copilot reported non-zero status. payload=${JSON.stringify(payload)}`);
+      assert.ok(
+        typeof payload.rawOutput === "string" && payload.rawOutput.trim().length > 0,
+        `expected a non-empty adversarial review. payload=${JSON.stringify(payload)}`
+      );
+      assert.ok(
+        typeof payload.threadId === "string" && payload.threadId.length > 0,
+        `expected threadId (sessionId) to be captured. payload=${JSON.stringify(payload)}`
+      );
+      assert.equal(
+        fs.readFileSync(filePath, "utf8"),
+        before,
+        "adversarial review must not mutate the working tree"
+      );
+    }
+  );
+});
+
+describe("integration: background task lifecycle (worker + status + result)", () => {
+  it(
+    "task --background → status --wait → result: drives a detached worker to completion",
+    { timeout: 200_000 },
+    async (t) => {
+      if (skipReason) {
+        t.skip(skipReason);
+        return;
+      }
+
+      // Enqueue: spawns the detached task-worker subprocess.
+      const queued = await runCompanion([
+        "task",
+        "Respond with exactly one lowercase word: ping",
+        "--background",
+        "--json"
+      ]);
+      assert.equal(queued.code, 0, `enqueue exited ${queued.code}. stderr:\n${queued.stderr}`);
+
+      const queuedPayload = JSON.parse(queued.stdout);
+      const jobId = queuedPayload.jobId;
+      assert.ok(typeof jobId === "string" && jobId.length > 0, `expected a jobId. payload=${JSON.stringify(queuedPayload)}`);
+      assert.equal(queuedPayload.status, "queued", `expected queued status. payload=${JSON.stringify(queuedPayload)}`);
+
+      // Wait: the companion polls the worker's job file until it leaves the
+      // active state. This exercises handleTaskWorker → runTrackedJob end to end.
+      const waited = await runCompanion([
+        "status",
+        jobId,
+        "--wait",
+        "--json",
+        "--timeout-ms",
+        "180000"
+      ]);
+      assert.equal(waited.code, 0, `status --wait exited ${waited.code}. stderr:\n${waited.stderr}`);
+
+      const snapshot = JSON.parse(waited.stdout);
+      assert.equal(snapshot.waitTimedOut, false, `worker did not finish in time. snapshot=${JSON.stringify(snapshot)}`);
+      assert.equal(
+        snapshot.job?.status,
+        "completed",
+        `background job did not complete. job=${JSON.stringify(snapshot.job)}`
+      );
+
+      // Result: the stored worker output is retrievable and carries the run.
+      const resultRun = await runCompanion(["result", jobId, "--json"]);
+      assert.equal(resultRun.code, 0, `result exited ${resultRun.code}. stderr:\n${resultRun.stderr}`);
+
+      const result = JSON.parse(resultRun.stdout);
+      const stored = result.storedJob;
+      assert.ok(stored, `expected a storedJob payload. result=${JSON.stringify(result)}`);
+      assert.equal(stored.status, "completed", `storedJob not completed. stored=${JSON.stringify(stored)}`);
+      assert.ok(
+        typeof stored.threadId === "string" && stored.threadId.length > 0,
+        `expected stored threadId. stored=${JSON.stringify(stored)}`
+      );
+      // Assert the worker captured *some* final answer — not its exact text.
+      // The model's word choice is nondeterministic (it may echo "pong"), so
+      // matching specific content would make this lifecycle test flaky.
+      assert.ok(
+        stored.result && typeof stored.result.rawOutput === "string" && stored.result.rawOutput.trim().length > 0,
+        `expected non-empty worker output. stored.result=${JSON.stringify(stored.result)}`
+      );
+      assert.equal(stored.result.status, 0, `worker reported non-zero copilot status. stored.result=${JSON.stringify(stored.result)}`);
     }
   );
 });

@@ -1,3 +1,41 @@
+# Session handoff — 2026-05-29 (wave 5) — live-binary integration coverage (Pending #1) + flag re-probe (Pending #4) + opus-4.8 model bump
+
+## Current task and status
+
+**Status:** Done. Closed two carried pending items: **#1** (live-binary coverage for the review / adversarial-review / setup / background-worker handlers) and **#4** (Copilot CLI flag re-probe), then bumped the premium model-routing tier from `claude-opus-4.7` → `claude-opus-4.8` (newer model, same 15× cost) after verifying the slug live. **No new release** (v0.8.1 stands). Suite **433 pass, 0 fail, skipped 1 → 5** (the 4 new integration tests are opt-in). Working tree has uncommitted changes at handoff write time (see "Commit status").
+
+## What this wave did
+
+### Pending #1 — live-binary integration tests (the work)
+Extended `tests/integration.test.mjs` (was 1 gated test for `task`) with **4 new gated tests**, all behind `COPILOT_INTEGRATION=1` + the existing auth check:
+- **`setup --json`** — asserts `copilot.available` + `auth.loggedIn` + `ready` + empty `nextSteps`. No API call (probe only — the cheap end of the live tier).
+- **`review --json`** — runs against a throwaway git repo (new `makeReviewRepo()` helper: `git init` + commit a file + introduce a working-tree bug). Asserts non-empty `rawOutput`, captured `threadId`, `copilot.status === 0`, the **read-only invariant** (reviewed file byte-for-byte unchanged on disk), and that the job persists as `latestFinished` with `kind:"review"` / `status:"completed"`.
+- **`adversarial-review --json`** — same shape + a focus positional; asserts non-empty review + threadId + read-only.
+- **background lifecycle** — `task --background --json` → parse `jobId` → `status <id> --wait --json --timeout-ms 180000` → assert `waitTimedOut:false` + `job.status:"completed"` → `result <id> --json` → assert `storedJob.status:"completed"`, non-empty `storedJob.result.rawOutput`, `storedJob.result.status:0`. Exercises `handleTask` (background branch) → `enqueueBackgroundTask` → detached `task-worker` → `runTrackedJob` → `executeTaskRun` → `handleStatus --wait` → `handleResult` end to end.
+
+**Verified live** against Copilot CLI 1.0.52 (authenticated via macOS keychain): gated run = **4 pass / 1 fail → fixed → all green**. The one failure was a brittle assertion of mine (asserted the model echo "ping"; Copilot replied "pong") — relaxed to a non-empty + `status:0` check, since the test's job is the worker lifecycle, not the model's word choice. Re-ran the background test gated → green. Ungated `npm test` → 433 pass, 5 skipped, 0 fail.
+
+**Coverage:** `copilot-companion.mjs` stays ~35% line in the **default ungated** run (integration tests skip, so they don't move the default number) but rises to **~80.9% line / ~87.1% funcs** when measured with `COPILOT_INTEGRATION=1` (`node --test --experimental-test-coverage tests/integration.test.mjs tests/companion-cli.test.mjs tests/run-dispatch.test.mjs`). The wave-2/3/4 "review/setup/worker need a live harness" gap is now closed — that harness exists.
+
+### Pending #4 — Copilot CLI flag re-probe
+`copilot --version` → **1.0.52** (unchanged since the wave-2/3/4 probes). No upstream release since the last zero-drift audit, so `buildCopilotArgs` parity holds — nothing to port. Re-probe again when the binary advances past 1.0.52.
+
+### Model-routing bump — `claude-opus-4.7` → `claude-opus-4.8`
+`DESIGN.md` §2.9 premium tier updated: `claude-opus-4.7` 15× → **`claude-opus-4.8`** 15× (newer model, same cost). **Verified live before editing** (project slug-verification discipline): probed via the companion task path — `task --model claude-opus-4.8 "...OK..." --json` → `status:0`, real session id, `OK`. Also ping-tested **`--model claude-opus-4.8 --effort high`** → `status:0`, `pong`, exit 0 — both the slug and `high` effort accepted on Copilot CLI 1.0.52. Only the live DESIGN.md §2.9 reference was changed; the historical `claude-opus-4.7` mention in the wave-3 handoff entry below (~line 255) was left as a frozen record (it points to DESIGN.md §2.9 as the living source).
+
+## Commit status
+File changes are **uncommitted** at handoff write time (4 files): `tests/integration.test.mjs` (+4 tests + `makeReviewRepo` helper + `spawnSync` import + repo cleanup), `CLAUDE.md` (test-count 1→5 skipped + integration-coverage note), `DESIGN.md` (§2.9 opus-4.7→4.8 slug bump), `SESSION-HANDOFF.md` (this entry). No source (`lib/` or companion) behavior changed — tests + docs only. Suggested commit: `Add live-binary integration tests + bump premium model tier to opus-4.8 (Pending #1/#4)`. CI will run the ungated suite (integration tests skip in CI — no `COPILOT_INTEGRATION` there).
+
+## Pending / not done (carried)
+- **[ ] Linux real-host auth verification** (carried from wave 2).
+- **[ ] Repo move to `Claude-Copilot` org** (carried; only if a real org is created — DESIGN §2.7).
+- **[ ] Port new Copilot flags when the binary updates** (no drift at 1.0.52 today).
+
+## Blockers
+None.
+
+---
+
 # Session handoff — 2026-05-28 (wave 4) — task/plan dispatch hermetic tests + flag re-probe
 
 ## Current task and status
